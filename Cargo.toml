@@ -1,0 +1,12 @@
+[workspace]
+resolver = "3"
+members = [
+    "emulator",
+    "firmware",
+]
+
+[profile.release]
+panic = "abort"
+
+[profile.dev]
+panic = "abort"

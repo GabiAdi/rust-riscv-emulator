@@ -1,0 +1,10 @@
+[build]
+target = "riscv64gc.json"
+rustflags = [
+    "-C", "link-arg=-Tfirmware/link.ld",
+]
+
+[unstable]
+build-std = ["core", "compiler_builtins", "alloc"]
+build-std-features = ["compiler-builtins-mem"]
+json-target-spec = true
