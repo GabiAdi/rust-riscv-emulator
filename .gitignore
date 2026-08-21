@@ -1,4 +1,4 @@
 /target
 /riscv-tests-source
 /rvc_test
-/assembly
+/assembly/*
