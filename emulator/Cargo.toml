@@ -1,0 +1,10 @@
+[package]
+name = "emulator"
+version = "0.1.0"
+edition = "2024"
+default-run = "emulator"
+
+[dependencies]
+goblin = "0.8"
+softfloat-wrapper = { version = "0.3.4", default-features = false, features = ["riscv"] }
+crossterm = "0.29.0"
