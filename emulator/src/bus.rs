@@ -1,160 +1,114 @@
+use core::borrow;
 use std::cell::{Cell, RefCell};
 use std::rc::{Rc, Weak};
 
 use crate::cpu::{Cpu, MemoryWidth};
+use crate::dma_device::{self, DmaDevice};
 use crate::interrupt_device::InterruptDevice;
 use crate::memory_device::{DeviceError, DeviceType, MemoryDevice};
 
 pub struct Bus {
-    memory_devices: Vec<Box<dyn MemoryDevice>>,
-    interrupt_devices: Vec<Box<dyn InterruptDevice>>,
-    cpu: Weak<RefCell<Cpu>>,
+    memory_devices: Vec<RefCell<Box<dyn MemoryDevice>>>,
+    interrupt_devices: Vec<RefCell<Box<dyn InterruptDevice>>>,
+    dma_devices: Vec<Box<RefCell<dyn DmaDevice>>>,
     max_addr: u64,
     mip_shared: Rc<Cell<u64>>,
 
     pub halt_cpu: bool,
-    pub tohost_addr: Option<u64>,
 }
 
 impl Bus {
     pub fn new(
-        memory_devices: Vec<Box<dyn MemoryDevice>>,
-        interrupt_devices: Vec<Box<dyn InterruptDevice>>,
+        memory_devices: Vec<RefCell<Box<dyn MemoryDevice>>>,
+        interrupt_devices: Vec<RefCell<Box<dyn InterruptDevice>>>,
+        dma_devices: Vec<Box<RefCell<dyn DmaDevice>>>,
         mip_shared: Rc<Cell<u64>>,
     ) -> Bus {
         let mut max_addr: u64 = 0;
 
         for device in &memory_devices {
-            if device.get_end_addr() > max_addr {
-                max_addr = device.get_end_addr()
+            if device.borrow().get_end_addr() > max_addr {
+                max_addr = device.borrow().get_end_addr()
             }
         }
 
-        Bus {
+        let bus = Bus {
             memory_devices,
             interrupt_devices,
+            dma_devices,
             max_addr,
-            cpu: Weak::new(),
             mip_shared,
-
             halt_cpu: false,
-            tohost_addr: None,
+        };
+
+        bus
+    }
+
+    pub fn attach_dma_devices(&self, bus: &Rc<Bus>) {
+        for device in &self.dma_devices {
+            device.borrow_mut().attach_bus(Rc::downgrade(bus));
         }
     }
 
-    pub fn attach_cpu(&mut self, cpu: &Rc<RefCell<Cpu>>) {
-        self.cpu = Rc::downgrade(cpu);
+    pub fn tick_interrupts(&self) {
+        for device in &self.interrupt_devices {
+            device.borrow_mut().trigger_interrupt(&self.mip_shared);
+        }
     }
 
-    pub fn tick_interrupts(&mut self) {
-        for device in &mut self.interrupt_devices {
-            device.trigger_interrupt(&self.mip_shared);
+    pub fn dma_read(&self, addr: u64, buf: &mut [u8]) -> Result<(), DeviceError> {
+        let device = self.get_device(addr)?;
+        let offset = addr - device.borrow().get_start_addr();
+        for (i, byte) in buf.iter_mut().enumerate() {
+            *byte = device.borrow().read_byte(offset + i as u64)? as u8;
         }
+        Ok(())
+    }
+
+    pub fn dma_write(&self, addr: u64, buf: &[u8]) -> Result<(), DeviceError> {
+        let device = self.get_device(addr)?;
+        let offset = addr - device.borrow().get_start_addr();
+        for (i, byte) in buf.iter().enumerate() {
+            device
+                .borrow_mut()
+                .write_byte(offset + i as u64, *byte as u64)?;
+        }
+        Ok(())
     }
 
     pub fn read(&self, addr: u64, width: MemoryWidth) -> Result<u64, DeviceError> {
+        let device = self.get_device(addr)?;
+        let start_addr = device.borrow().get_start_addr();
         match width {
-            MemoryWidth::Byte => self.read_byte(addr),
-            MemoryWidth::Hword => self.read_hword(addr),
-            MemoryWidth::Word => self.read_word(addr),
-            MemoryWidth::Dword => self.read_dword(addr),
+            MemoryWidth::Byte => device.borrow().read_byte(addr - start_addr),
+            MemoryWidth::Hword => device.borrow().read_hword(addr - start_addr),
+            MemoryWidth::Word => device.borrow().read_word(addr - start_addr),
+            MemoryWidth::Dword => device.borrow().read_dword(addr - start_addr),
         }
     }
 
-    pub fn write(&mut self, addr: u64, value: u64, width: MemoryWidth) -> Result<(), DeviceError> {
-        if addr >= 0x1000 && addr <= 0x2000 {
-            println!("Wrote: {:#018x} to {:#018x}", value, addr);
-        }
-        match self.tohost_addr {
-            Some(tohost_addr) => {
-                if tohost_addr == addr {
-                    self.halt_cpu = true;
-                }
-            }
-            None => {}
-        }
+    pub fn write(&self, addr: u64, value: u64, width: MemoryWidth) -> Result<(), DeviceError> {
+        let device = self.get_device(addr)?;
+        let start_addr = device.borrow().get_start_addr();
         match width {
-            MemoryWidth::Byte => self.write_byte(addr, value),
-            MemoryWidth::Hword => self.write_hword(addr, value),
-            MemoryWidth::Word => self.write_word(addr, value),
-            MemoryWidth::Dword => self.write_dword(addr, value),
+            MemoryWidth::Byte => device.borrow_mut().write_byte(addr - start_addr, value),
+            MemoryWidth::Hword => device.borrow_mut().write_hword(addr - start_addr, value),
+            MemoryWidth::Word => device.borrow_mut().write_word(addr - start_addr, value),
+            MemoryWidth::Dword => device.borrow_mut().write_dword(addr - start_addr, value),
         }
     }
 
-    pub fn read_byte(&self, addr: u64) -> Result<u64, DeviceError> {
-        match self.get_device(addr) {
-            Ok(device) => device.read_byte(addr - device.get_start_addr()),
-            Err(error) => Err(error),
-        }
-    }
-
-    pub fn read_hword(&self, addr: u64) -> Result<u64, DeviceError> {
-        match self.get_device(addr) {
-            Ok(device) => device.read_hword(addr - device.get_start_addr()),
-            Err(error) => Err(error),
-        }
-    }
-
-    pub fn read_word(&self, addr: u64) -> Result<u64, DeviceError> {
-        match self.get_device(addr) {
-            Ok(device) => device.read_word(addr - device.get_start_addr()),
-            Err(error) => Err(error),
-        }
-    }
-
-    pub fn read_dword(&self, addr: u64) -> Result<u64, DeviceError> {
-        match self.get_device(addr) {
-            Ok(device) => device.read_dword(addr - device.get_start_addr()),
-            Err(error) => Err(error),
-        }
-    }
-
-    pub fn write_byte(&mut self, addr: u64, value: u64) -> Result<(), DeviceError> {
-        match self.get_device_mut(addr) {
-            Ok(device) => device.write_byte(addr - device.get_start_addr(), value),
-            Err(error) => Err(error),
-        }
-    }
-
-    pub fn write_hword(&mut self, addr: u64, value: u64) -> Result<(), DeviceError> {
-        match self.get_device_mut(addr) {
-            Ok(device) => device.write_hword(addr - device.get_start_addr(), value),
-            Err(error) => Err(error),
-        }
-    }
-
-    pub fn write_word(&mut self, addr: u64, value: u64) -> Result<(), DeviceError> {
-        match self.get_device_mut(addr) {
-            Ok(device) => device.write_word(addr - device.get_start_addr(), value),
-            Err(error) => Err(error),
-        }
-    }
-
-    pub fn write_dword(&mut self, addr: u64, value: u64) -> Result<(), DeviceError> {
-        match self.get_device_mut(addr) {
-            Ok(device) => device.write_dword(addr - device.get_start_addr(), value),
-            Err(error) => Err(error),
-        }
-    }
-
-    fn get_device(&self, addr: u64) -> Result<&Box<dyn MemoryDevice>, DeviceError> {
+    fn get_device(&self, addr: u64) -> Result<&RefCell<Box<dyn MemoryDevice>>, DeviceError> {
         for device in &self.memory_devices {
-            if addr >= device.get_start_addr() && addr < device.get_end_addr() {
+            let d = device.borrow();
+            if addr >= d.get_start_addr() && addr < d.get_end_addr() {
                 // match device.get_device_type() {
                 //     DeviceType::KeyboardDevice => {
                 //         println!("KeyboardDevice at {:#018x}", addr);
                 //     }
                 //     _ => {}
                 // }
-                return Ok(device);
-            }
-        }
-        Err(DeviceError::DeviceNotFound { addr })
-    }
-
-    fn get_device_mut(&mut self, addr: u64) -> Result<&mut Box<dyn MemoryDevice>, DeviceError> {
-        for device in &mut self.memory_devices {
-            if addr >= device.get_start_addr() && addr < device.get_end_addr() {
+                drop(d);
                 return Ok(device);
             }
         }

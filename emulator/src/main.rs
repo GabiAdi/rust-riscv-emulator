@@ -1,12 +1,15 @@
 mod bus;
 mod console;
 mod cpu;
+mod disk;
+mod dma_device;
 mod interrupt_device;
 mod keyboard_device;
 mod memory_device;
 mod ram;
 mod rom;
 mod test_device;
+mod timer;
 
 use crossterm::terminal;
 use goblin::elf::Elf;
@@ -22,8 +25,9 @@ use std::time::{Duration, Instant};
 use std::{fs, io};
 
 use crate::console::Console;
-use crate::cpu::CpuError;
 use crate::cpu::Register;
+use crate::cpu::{CpuError, MemoryWidth};
+use crate::dma_device::DmaDevice;
 use crate::interrupt_device::InterruptDevice;
 use crate::keyboard_device::KeyboardDevice;
 use crate::memory_device::DeviceError;
@@ -31,8 +35,10 @@ use crate::memory_device::MemoryDevice;
 use crate::ram::Ram;
 use crate::rom::Rom;
 use crate::test_device::TestDevice;
+use crate::timer::Timer;
 use bus::Bus;
 use cpu::{Cpu, Csr};
+use disk::Disk;
 
 const RAM_SIZE: u64 = 1024 * 1024 * 128;
 const RAM_BASE: u64 = 0x80000000;
@@ -108,6 +114,12 @@ fn handle_error(error: CpuError) {
                 DeviceError::DeviceNotFound { addr } => {
                     println!("DeviceNotFound at {:#018x}", addr);
                 }
+                DeviceError::InvalidAlign { addr } => {
+                    println!("DeviceAlign at {:#018x}", addr);
+                }
+                DeviceError::NoBus => {
+                    println!("No bus");
+                }
             }
             println!("PC: {:#018x}", pc);
             println!("Current instruction: {:#010x}", current_instruction);
@@ -125,6 +137,9 @@ fn handle_error(error: CpuError) {
         CpuError::TimeOut => {
             println!("Cpu timed out at 10000 cycles");
         }
+        CpuError::NoBus => {
+            print!("Cpu has no bus attached");
+        }
     }
 }
 
@@ -136,26 +151,27 @@ fn test_cpu(prefix: &str) -> Result<bool, CpuError> {
     let mut tests: Vec<TestBinary> = Vec::new();
 
     for binary in &test_binaries {
-        let mut memory_devices: Vec<Box<dyn MemoryDevice>> = Vec::new();
-        let interrupt_devices: Vec<Box<dyn InterruptDevice>> = Vec::new();
+        let mut memory_devices: Vec<RefCell<Box<dyn MemoryDevice>>> = Vec::new();
+        let interrupt_devices: Vec<RefCell<Box<dyn InterruptDevice>>> = Vec::new();
+        let dma_devices: Vec<Box<RefCell<dyn DmaDevice>>> = Vec::new();
+
         let mut ram = Ram::new(RAM_BASE, RAM_SIZE);
         let file_name = binary.file_name().unwrap().to_str().unwrap();
         let file_path = String::from(test_path) + file_name;
         let loaded_program = load_program(&file_path, &mut ram);
-        memory_devices.push(Box::new(ram));
+        memory_devices.push(RefCell::new(Box::new(ram)));
 
         let cpu = Rc::new(RefCell::new(Cpu::new()));
-        let bus = Rc::new(RefCell::new(Bus::new(
+        let bus = Rc::new(Bus::new(
             memory_devices,
             interrupt_devices,
+            dma_devices,
             cpu.borrow().get_shared_mip(),
-        )));
+        ));
 
-        cpu.borrow_mut().attach_bus(&bus);
-        bus.borrow_mut().attach_cpu(&cpu);
+        cpu.borrow_mut().attach_bus(bus);
 
         cpu.borrow_mut().set_pc(loaded_program.entry_point);
-        bus.borrow_mut().tohost_addr = Some(loaded_program.tohost_addr);
 
         println!("Trying test: {}", file_name);
 
@@ -243,35 +259,41 @@ fn main() {
     //
     // return;
 
-    let mut memory_devices: Vec<Box<dyn MemoryDevice>> = Vec::new();
-    let mut interrupt_devices: Vec<Box<dyn InterruptDevice>> = Vec::new();
+    let mut memory_devices: Vec<RefCell<Box<dyn MemoryDevice>>> = Vec::new();
+    let mut interrupt_devices: Vec<RefCell<Box<dyn InterruptDevice>>> = Vec::new();
+    let dma_devices: Vec<Box<RefCell<dyn DmaDevice>>> = Vec::new();
 
     // let data = fs::read("/home/user/rust-risc-v/assembly/testc.bin").unwrap();
     let data = fs::read("/home/user/rust-risc-v/assembly/firmware.bin").unwrap();
 
     // let rom = Rom::new(0, data);
 
-    let cpu = Rc::new(RefCell::new(Cpu::new()));
-
     let mut ram = Ram::new(0, 0x5000000);
     ram.write_file(0, data);
     let console = Console::new(0xFFFFFFFFFFFFFF00);
     // devices.push(Box::new(rom));
-    memory_devices.push(Box::new(ram));
-    memory_devices.push(Box::new(console));
+    memory_devices.push(RefCell::new(Box::new(ram)));
+    memory_devices.push(RefCell::new(Box::new(console)));
 
-    let keyboard_device = Rc::new(RefCell::new(KeyboardDevice::new(0xFFFFFFFFFFFFFF08)));
-    memory_devices.push(Box::new(keyboard_device.clone()));
-    interrupt_devices.push(Box::new(keyboard_device.clone()));
+    let timer = Rc::new(RefCell::new(Timer::new(0xFFFFFFFFFFFFFF08)));
+    memory_devices.push(RefCell::new(Box::new(timer.clone())));
+    interrupt_devices.push(RefCell::new(Box::new(timer.clone())));
+    // let keyboard_device = Rc::new(RefCell::new(KeyboardDevice::new(0xFFFFFFFFFFFFFF08)));
+    // memory_devices.push(Box::new(keyboard_device.clone()));
+    // interrupt_devices.push(Box::new(keyboard_device.clone()));
+    let cpu = Rc::new(RefCell::new(Cpu::new()));
 
-    let bus = Rc::new(RefCell::new(Bus::new(
+    let bus = Rc::new(Bus::new(
         memory_devices,
         interrupt_devices,
+        dma_devices,
         cpu.borrow().get_shared_mip(),
-    )));
+    ));
 
-    cpu.borrow_mut().attach_bus(&bus);
-    bus.borrow_mut().attach_cpu(&cpu);
+    bus.attach_dma_devices(&bus);
+    cpu.borrow_mut().attach_bus(bus);
+
+    // cpu.borrow_mut().halt_on_ebreak = false;
 
     // cpu.borrow_mut().run_until_halt();
 
@@ -338,7 +360,8 @@ fn main() {
         } else if cmd == "ins" {
             println!(
                 "{:#010x}",
-                bus.borrow_mut().read_word(cpu.borrow().get_pc()).unwrap()
+                cpu.borrow()
+                    .debug_read(cpu.borrow().get_pc(), MemoryWidth::Word)
             );
         } else if cmd == "h?" {
             println!(

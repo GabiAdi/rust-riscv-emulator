@@ -1,31 +1,51 @@
+use crate::console::{print_str, print_u64};
+
 #[inline(always)]
 pub unsafe fn write_mtvec(addr: u64) {
-    core::arch::asm!("csrw mtvec, {}", in(reg) addr);
+    unsafe {
+        core::arch::asm!("csrw mtvec, {}", in(reg) addr);
+    }
 }
 #[inline(always)]
 pub unsafe fn read_mcause() -> u64 {
     let v: u64;
-    core::arch::asm!("csrr {}, mcause", out(reg) v);
+    unsafe { core::arch::asm!("csrr {}, mcause", out(reg) v) };
     v
 }
 #[inline(always)]
 pub unsafe fn read_mepc() -> u64 {
     let v: u64;
-    core::arch::asm!("csrr {}, mepc", out(reg) v);
+    unsafe {
+        core::arch::asm!("csrr {}, mepc", out(reg) v);
+    }
+    v
+}
+
+pub unsafe fn read_mcycle() -> u64 {
+    let v: u64;
+    unsafe {
+        core::arch::asm!("csrr {}, mcycle", out(reg) v);
+    }
     v
 }
 #[inline(always)]
 pub unsafe fn write_mepc(v: u64) {
-    core::arch::asm!("csrw mepc, {}", in(reg) v);
+    unsafe {
+        core::arch::asm!("csrw mepc, {}", in(reg) v);
+    }
 }
 #[inline(always)]
 pub unsafe fn set_mstatus_mie() {
     // mstatus.MIE is bit 3
-    core::arch::asm!("csrsi mstatus, 0x8");
+    unsafe {
+        core::arch::asm!("csrsi mstatus, 0x8");
+    }
 }
 #[inline(always)]
 pub unsafe fn write_mie(v: u64) {
-    core::arch::asm!("csrw mie, {}", in(reg) v);
+    unsafe {
+        core::arch::asm!("csrw mie, {}", in(reg) v);
+    }
 }
 
 #[unsafe(no_mangle)]

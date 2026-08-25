@@ -2,8 +2,8 @@
 use core::arch::global_asm;
 
 use crate::{
-    console::{print_str, print_u64},
-    ebreak,
+    console::{print_char, print_str, print_u64},
+    csr, ebreak,
 };
 
 global_asm!(
@@ -12,6 +12,7 @@ global_asm!(
 .align 4
 .global _trap_entry
 _trap_entry:
+    nop
     addi sp, sp, -256
     sd x1,  0*8(sp)
     sd x5,  1*8(sp)
@@ -94,8 +95,9 @@ extern "C" fn rust_trap_dispatch() {
         let code = cause & 0x7fff_ffff_ffff_ffff;
 
         match (is_interrupt, code) {
-            (true, 11) => keyboard_isr(), // machine external interrupt
-            (true, 7) => timer_isr(),     // machine timer interrupt
+            // (true, 11) => keyboard_isr(),
+            (true, 11) => timer_external_isr(), // machine external interrupt
+            (true, 7) => timer_isr(),           // machine timer interrupt
             (false, 3) => ebreak_handler(),
             (false, _) => exception_handler(code),
             _ => {}
@@ -105,6 +107,23 @@ extern "C" fn rust_trap_dispatch() {
 
 fn ebreak_handler() {
     return;
+}
+
+fn timer_external_isr() {
+    const MMIO_TIMER_COUNT: *mut u8 = 0xFFFFFFFFFFFFFF08 as *mut u8;
+    const MMIO_TIMER_ENABLE: *mut u8 = 0xFFFFFFFFFFFFFF10 as *mut u8;
+
+    unsafe {
+        MMIO_TIMER_ENABLE.write_volatile(0 as u8);
+        MMIO_TIMER_COUNT.write_volatile(0);
+    }
+
+    let cycles = unsafe { csr::read_mcycle() };
+    print_str("Cycles: ");
+    print_u64(cycles);
+    print_char(b'\n');
+
+    // - 12 for _start
 }
 
 fn keyboard_isr() {
@@ -123,5 +142,6 @@ fn exception_handler(_code: u64) {
     print_str("Exception: ");
     print_u64(_code);
     print_str("\n");
-    ebreak();
+    panic!("Illegal instruction! ");
+    // ebreak();
 }

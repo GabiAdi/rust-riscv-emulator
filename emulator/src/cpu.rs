@@ -11,7 +11,7 @@ pub struct Cpu {
     pub print_instruction: bool,
     pub halted: bool,
     pub halt_on_ebreak: bool,
-    bus: Option<Rc<RefCell<Bus>>>,
+    bus: Option<Rc<Bus>>,
     registers: [u64; 32],
     float_registers: [u64; 32],
     csrs: Csrs,
@@ -19,6 +19,7 @@ pub struct Cpu {
     pc: u64,
     instruction: u64,
     priv_mode: u8,
+    trap: Option<Trap>,
     compressed: bool,
     jump: bool,
 }
@@ -31,6 +32,7 @@ pub enum CpuError {
         registers: [u64; 32],
     },
     TimeOut,
+    NoBus,
 }
 
 const REGISTER_NAME: [&str; 32] = [
@@ -112,6 +114,7 @@ pub enum Interrupt {
     MachineExternal = 11,
 }
 
+#[derive(Clone, Copy)]
 pub struct Trap {
     pub cause: u64,
     pub is_interrupt: bool,
@@ -426,9 +429,14 @@ impl Cpu {
             pc: 0,
             instruction: 0,
             priv_mode: 3,
+            trap: None,
             jump: false,
             compressed: false,
         }
+    }
+
+    pub fn attach_bus(&mut self, bus: Rc<Bus>) {
+        self.bus = Some(bus);
     }
 
     pub fn get_shared_mip(&self) -> Rc<Cell<u64>> {
@@ -440,10 +448,6 @@ impl Cpu {
             Some(s) => s.to_string(),
             None => "".to_string(),
         }
-    }
-
-    pub fn attach_bus(&mut self, bus: &Rc<RefCell<Bus>>) {
-        self.bus = Some(Rc::clone(bus));
     }
 
     pub fn halt(&mut self) {
@@ -466,30 +470,51 @@ impl Cpu {
 
     pub fn step(&mut self) -> Result<(), CpuError> {
         // Pre-step
+        let bus: Rc<Bus>;
+        match &self.bus {
+            Some(b) => bus = b.clone(),
+            None => return Err(CpuError::NoBus),
+        }
+
         self.csrs.sync_mip();
 
-        if let Some(bus) = &self.bus {
-            bus.borrow_mut().tick_interrupts();
-        }
+        bus.tick_interrupts();
 
         if self.halted {
             return Ok(());
         }
 
         if let Some(trap) = self.check_interrupts() {
+            self.trap = Some(trap);
+        }
+
+        if let Some(trap) = self.trap {
             self.take_trap(trap);
+            self.trap = None;
 
             self.csrs.regs[Csr::Mcycle as usize] += 1;
             return Ok(());
         }
 
-        if let Some(bus) = &self.bus {
-            if bus.borrow().halt_cpu {
-                self.halted = true;
-                return Ok(());
-            }
+        if bus.halt_cpu {
+            self.halted = true;
+            return Ok(());
+        }
 
-            let lo = match bus.borrow().read_hword(self.pc) {
+        let lo = match bus.read(self.pc, MemoryWidth::Hword) {
+            Ok(h) => h as u64,
+            Err(error) => {
+                return Err(CpuError::MemoryDeviceError {
+                    device_error: error,
+                    current_instruction: self.instruction,
+                    pc: self.pc,
+                    registers: self.registers,
+                });
+            }
+        };
+
+        self.instruction = if lo & 0b11 == 0b11 {
+            let hi = match bus.read(self.pc.wrapping_add(2), MemoryWidth::Hword) {
                 Ok(h) => h as u64,
                 Err(error) => {
                     return Err(CpuError::MemoryDeviceError {
@@ -500,94 +525,99 @@ impl Cpu {
                     });
                 }
             };
+            (hi << 16) | lo
+        } else {
+            lo
+        };
 
-            self.instruction = if lo & 0b11 == 0b11 {
-                let hi = match bus.borrow().read_hword(self.pc.wrapping_add(2)) {
-                    Ok(h) => h as u64,
-                    Err(error) => {
-                        return Err(CpuError::MemoryDeviceError {
-                            device_error: error,
-                            current_instruction: self.instruction,
-                            pc: self.pc,
-                            registers: self.registers,
-                        });
-                    }
-                };
-                (hi << 16) | lo
-            } else {
-                lo
-            };
+        // self.instruction = match bus.borrow().read_word(self.pc) {
+        //     Ok(word) => word,
+        //     Err(error) => {
+        //         return Err(CpuError::MemoryDeviceError {
+        //             device_error: error,
+        //             current_instruction: self.instruction,
+        //             pc: self.pc,
+        //             registers: self.registers,
+        //         });
+        //     }
+        // };
 
-            // self.instruction = match bus.borrow().read_word(self.pc) {
-            //     Ok(word) => word,
-            //     Err(error) => {
-            //         return Err(CpuError::MemoryDeviceError {
-            //             device_error: error,
-            //             current_instruction: self.instruction,
-            //             pc: self.pc,
-            //             registers: self.registers,
-            //         });
-            //     }
-            // };
+        let decoded_instruction = self.decode(self.instruction);
+        let instruction_result = self.execute(decoded_instruction);
 
-            let decoded_instruction = self.decode(self.instruction);
-            let instruction_result = self.execute(decoded_instruction);
-
-            if self.print_instruction {
-                match instruction_result {
-                    InstructionResult::Unkown => {
-                        println!(
-                            "Unkown:\t{:#010x}\tat:\t{:#018x}",
-                            self.instruction,
-                            self.get_pc()
-                        );
-                    }
-                    _ => {
-                        // println!(
-                        //     "Decoded:\t{:#010x}\tat\t{:#018x}",
-                        //     self.instruction,
-                        //     self.get_pc()
-                        // );
-                    }
+        if self.print_instruction {
+            match instruction_result {
+                InstructionResult::Unkown => {
+                    println!(
+                        "Unkown:\t{:#010x}\tat:\t{:#018x}",
+                        self.instruction,
+                        self.get_pc()
+                    );
+                }
+                _ => {
+                    // println!(
+                    //     "Decoded:\t{:#010x}\tat\t{:#018x}",
+                    //     self.instruction,
+                    //     self.get_pc()
+                    // );
                 }
             }
-
-            match self.writeback(instruction_result) {
-                Ok(trap_option) => match trap_option {
-                    // Some(trap) => {}
-                    Some(trap) => self.take_trap(trap),
-                    None => {}
-                },
-                Err(error) => {
-                    return Err(CpuError::MemoryDeviceError {
-                        device_error: error,
-                        current_instruction: self.instruction,
-                        pc: self.pc,
-                        registers: self.registers,
-                    });
-                }
-            };
-
-            if !self.jump {
-                if self.compressed {
-                    self.pc = self.pc.wrapping_add(2);
-                    self.compressed = false;
-                } else {
-                    self.pc = self.pc.wrapping_add(4);
-                }
-            } else {
-                self.compressed = false;
-                self.jump = false;
-            }
-
-            self.csrs.regs[Csr::Mcycle as usize] += 1;
-
-            // if self.csrs.read(Csr::Mcycle) == 10000 {
-            //     self.halted = true;
-            //     return Err(CpuError::TimeOut);
-            // }
         }
+
+        match self.writeback(instruction_result, bus) {
+            Ok(trap_option) => match trap_option {
+                // Some(trap) => {}
+                Some(trap) => self.trap = Some(trap),
+                None => {}
+            },
+            Err(error) => {
+                return Err(CpuError::MemoryDeviceError {
+                    device_error: error,
+                    current_instruction: self.instruction,
+                    pc: self.pc,
+                    registers: self.registers,
+                });
+            }
+        };
+
+        if !self.jump {
+            if self.compressed {
+                self.pc = self.pc.wrapping_add(2);
+                self.compressed = false;
+            } else {
+                self.pc = self.pc.wrapping_add(4);
+            }
+        } else {
+            self.compressed = false;
+            self.jump = false;
+        }
+
+        self.csrs.regs[Csr::Mcycle as usize] += 1;
+
+        // if self.csrs.read(Csr::Mcycle) == 10000 {
+        //     self.halted = true;
+        //     return Err(CpuError::TimeOut);
+        // }
+
         Ok(())
+    }
+
+    pub fn debug_read(&self, addr: u64, width: MemoryWidth) -> u64 {
+        let bus: Rc<Bus>;
+        match &self.bus {
+            Some(b) => bus = b.clone(),
+            None => panic!("No bus"),
+        }
+        bus.read(addr, width).unwrap()
+    }
+
+    pub fn debug_write(&self, addr: u64, value: u64, width: MemoryWidth) {
+        let bus: Rc<Bus>;
+        match &self.bus {
+            Some(b) => bus = b.clone(),
+            None => panic!("No bus"),
+        }
+        bus.write(addr, value, width).unwrap()
     }
 
     pub fn set_pc(&mut self, addr: u64) {
@@ -664,7 +694,7 @@ impl Cpu {
 
         self.csrs.write(Csr::Mstatus, status);
 
-        let readback = self.csrs.read(Csr::Mstatus);
+        // let readback = self.csrs.read(Csr::Mstatus);
         // eprintln!(
         //     "take_trap: wrote mstatus={:#x}, readback={:#x}",
         //     status, readback
@@ -812,6 +842,7 @@ impl Cpu {
     fn writeback(
         &mut self,
         instruction_result: InstructionResult,
+        bus: Rc<Bus>,
     ) -> Result<Option<Trap>, DeviceError> {
         match instruction_result {
             InstructionResult::WriteToReg { rd, result } => {
@@ -857,10 +888,7 @@ impl Cpu {
                 width,
                 extension,
             } => {
-                let data = match self.bus.as_ref().unwrap().borrow().read(addr, width) {
-                    Ok(data) => data,
-                    Err(error) => return Err(error),
-                };
+                let data = bus.read(addr, width)?;
                 match width {
                     MemoryWidth::Byte => self.set_reg(rd, Self::extend_byte(data as u8, extension)),
                     MemoryWidth::Hword => {
@@ -876,18 +904,7 @@ impl Cpu {
                 addr,
                 result,
                 width,
-            } => {
-                match self
-                    .bus
-                    .as_ref()
-                    .unwrap()
-                    .borrow_mut()
-                    .write(addr, result, width)
-                {
-                    Ok(()) => {}
-                    Err(error) => return Err(error),
-                };
-            }
+            } => bus.write(addr, result, width)?,
             InstructionResult::WriteMemToFloatReg { rd, addr, width } => {
                 if addr % width as u64 != 0 {
                     return Ok(Some(Trap {
@@ -896,10 +913,7 @@ impl Cpu {
                         tval: addr,
                     }));
                 }
-                let data = match self.bus.as_ref().unwrap().borrow().read(addr, width) {
-                    Ok(data) => data,
-                    Err(error) => return Err(error),
-                };
+                let data = bus.read(addr, width)?;
                 match width {
                     MemoryWidth::Word => self.set_f32_reg(rd, f32::from_bits(data as u32)),
                     MemoryWidth::Dword => self.set_f64_reg(rd, f64::from_bits(data)),
@@ -919,10 +933,7 @@ impl Cpu {
                 self.jump = true;
             }
             InstructionResult::AtomicLoad { rd, addr, width } => {
-                let data = match self.bus.as_ref().unwrap().borrow().read(addr, width) {
-                    Ok(data) => data,
-                    Err(error) => return Err(error),
-                };
+                let data = bus.read(addr, width)?;
                 self.reservation = Some(addr);
                 match width {
                     MemoryWidth::Word => {
@@ -941,16 +952,7 @@ impl Cpu {
                 width,
             } => {
                 if self.reservation == Some(addr) {
-                    match self
-                        .bus
-                        .as_ref()
-                        .unwrap()
-                        .borrow_mut()
-                        .write(addr, result, width)
-                    {
-                        Ok(()) => {}
-                        Err(error) => return Err(error),
-                    };
+                    bus.write(addr, result, width)?;
                     self.set_reg(rd, 0);
                 } else {
                     self.set_reg(rd, 1);
@@ -964,10 +966,7 @@ impl Cpu {
                 width,
                 atomic_op,
             } => {
-                let data = match self.bus.as_ref().unwrap().borrow().read(addr, width) {
-                    Ok(data) => data,
-                    Err(error) => return Err(error),
-                };
+                let data = bus.read(addr, width)?;
                 let new_data: u64;
                 match width {
                     MemoryWidth::Word => {
@@ -982,16 +981,7 @@ impl Cpu {
                     }
                     _ => panic!("Invalid atomic width"),
                 }
-                match self
-                    .bus
-                    .as_ref()
-                    .unwrap()
-                    .borrow_mut()
-                    .write(addr, new_data, width)
-                {
-                    Ok(()) => {}
-                    Err(error) => return Err(error),
-                };
+                bus.write(addr, new_data, width)?;
             }
             InstructionResult::CsrOp {
                 rd,

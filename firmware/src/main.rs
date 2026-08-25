@@ -3,6 +3,7 @@
 
 mod allocator;
 mod console;
+mod csr;
 mod trap;
 
 extern crate alloc;
@@ -35,11 +36,14 @@ pub extern "C" fn _start() -> ! {
         "li t0, (1 << 11)",
         "csrw mie, t0",
         "csrsi mstatus, 0x8",
-    //     "1:",
+        "li t0, 1000000000",
+        "li t1, 0xFFFFFFFFFFFFFF08",
+        "sd t0, 0(t1)",
+        "li t0, 1",
+        "sb t0, 8(t1)",
         "j main",
         trap = sym _trap_entry,
     );
-    // core::arch::naked_asm!("la sp, _stack_top", "j main",);
 }
 
 #[unsafe(no_mangle)]
@@ -77,7 +81,14 @@ fn test_vector() {
 
     for i in 0..10000 {
         v.push(i);
+        if v[i as usize] % 100 == 0 {
+            console::print_str("Element of vector: ");
+            console::print_u64(v[i as usize]);
+            console::print_char(b'\n');
+        }
     }
+
+    print_str("Done allocation\n");
 
     for n in v {
         if n % 100 == 0 {

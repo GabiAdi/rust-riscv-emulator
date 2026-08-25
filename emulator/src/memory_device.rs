@@ -7,12 +7,16 @@ pub enum DeviceType {
     Console,
     KeyboardDevice,
     TestDevice,
+    Timer,
+    Disk,
 }
 
 #[derive(Debug)]
 pub enum DeviceError {
     AddrOutOfRange { addr: u64 },
     DeviceNotFound { addr: u64 },
+    InvalidAlign { addr: u64 },
+    NoBus,
 }
 
 pub trait MemoryDevice {
