@@ -261,10 +261,10 @@ fn main() {
 
     let mut memory_devices: Vec<RefCell<Box<dyn MemoryDevice>>> = Vec::new();
     let mut interrupt_devices: Vec<RefCell<Box<dyn InterruptDevice>>> = Vec::new();
-    let dma_devices: Vec<Box<RefCell<dyn DmaDevice>>> = Vec::new();
+    let mut dma_devices: Vec<Box<RefCell<dyn DmaDevice>>> = Vec::new();
 
-    // let data = fs::read("/home/user/rust-risc-v/assembly/testc.bin").unwrap();
-    let data = fs::read("/home/user/rust-risc-v/assembly/firmware.bin").unwrap();
+    let data = fs::read("/home/user/rust-risc-v/assembly/testc.bin").unwrap();
+    // let data = fs::read("/home/user/rust-risc-v/assembly/firmware.bin").unwrap();
 
     // let rom = Rom::new(0, data);
 
@@ -275,12 +275,24 @@ fn main() {
     memory_devices.push(RefCell::new(Box::new(ram)));
     memory_devices.push(RefCell::new(Box::new(console)));
 
-    let timer = Rc::new(RefCell::new(Timer::new(0xFFFFFFFFFFFFFF08)));
-    memory_devices.push(RefCell::new(Box::new(timer.clone())));
-    interrupt_devices.push(RefCell::new(Box::new(timer.clone())));
+    let disk = Rc::new(RefCell::new(
+        Disk::new(
+            0xFFFFFFFFFFFFFF08,
+            "/home/user/rust-risc-v/disks/disk_zero.img",
+        )
+        .unwrap(),
+    ));
+
+    memory_devices.push(RefCell::new(Box::new(disk.clone())));
+    dma_devices.push(Box::new(RefCell::new(disk.clone())));
+
+    // let timer = Rc::new(RefCell::new(Timer::new(0xFFFFFFFFFFFFFF08)));
+    // memory_devices.push(RefCell::new(Box::new(timer.clone())));
+    // interrupt_devices.push(RefCell::new(Box::new(timer.clone())));
     // let keyboard_device = Rc::new(RefCell::new(KeyboardDevice::new(0xFFFFFFFFFFFFFF08)));
     // memory_devices.push(Box::new(keyboard_device.clone()));
     // interrupt_devices.push(Box::new(keyboard_device.clone()));
+
     let cpu = Rc::new(RefCell::new(Cpu::new()));
 
     let bus = Rc::new(Bus::new(
@@ -379,6 +391,14 @@ fn main() {
         } else if cmd == "q" {
             break;
         }
+    }
+    //0x100000
+    for i in 0..128 {
+        println!(
+            "{:#018x}: {:#010x}",
+            i * 4 + 0x100000,
+            cpu.borrow().debug_read(0x100000 + i * 4, MemoryWidth::Word)
+        );
     }
 
     // terminal::disable_raw_mode().unwrap();

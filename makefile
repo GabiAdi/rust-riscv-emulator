@@ -6,7 +6,7 @@ NM		=	$(ARCH)-nm
 FLAGS	=	-march=rv64imacfdzicsr -g
 FLAGSC =	-march=rv64imacfdzicsr -g
 
-.PHONY: all clean firmware firmware.bin
+.PHONY: all clean test firmware firmware.bin
 
 all: test.bin testc.bin firmware.bin
 
@@ -34,6 +34,9 @@ firmware:
 
 firmware.bin: firmware
 	$(OC) -O binary assembly/firmware.elf assembly/firmware.bin
+
+test:
+	cargo test --bin emulator
 
 clean:
 	rm -f assembly/test.o assembly/test.elf assembly/test.bin

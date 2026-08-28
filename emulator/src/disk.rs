@@ -1,10 +1,17 @@
-use std::{cell::RefCell, rc::Weak};
+use std::{
+    cell::RefCell,
+    fs::{File, OpenOptions},
+    io::{Read, Seek, SeekFrom, Write},
+    rc::{Rc, Weak},
+};
 
 use crate::{
     bus::Bus,
     dma_device::DmaDevice,
     memory_device::{DeviceError, DeviceType, MemoryDevice},
 };
+
+pub const SECTOR_SIZE: u64 = 512;
 
 pub struct Disk {
     start_addr: u64,
@@ -16,20 +23,24 @@ pub struct Disk {
     sector: u64,       // 0x0
     sector_count: u32, // 0x8 Number of sectors
     disk_cmd: u16,     // 0xC 0 = idle, 1 = read, 2 = write
-    disk_status: u16,  // 0xE 0 = idle, 1 = busy, 2 = done, 3 = error
+    disk_status: u16,  // 0xE 0 = idle, 1 = busy, 2 = error
     disk_bufptr: u64,  // 0x10 Addr of DMA buffer
 
     bus: Option<Weak<Bus>>,
+
+    file: File,
 }
 
 impl Disk {
-    pub fn new(start_addr: u64) -> Disk {
-        Disk {
+    pub fn new(start_addr: u64, path: &str) -> std::io::Result<Disk> {
+        let file = OpenOptions::new().read(true).write(true).open(path)?;
+
+        Ok(Disk {
             start_addr,
             end_addr: start_addr + 0x18,
             size: 0x18,
 
-            data: Vec::with_capacity(0x18),
+            data: vec![0u8; 0x18],
 
             sector: 0,
             sector_count: 0,
@@ -38,6 +49,68 @@ impl Disk {
             disk_bufptr: 0,
 
             bus: None,
+
+            file,
+        })
+    }
+
+    fn operation(&mut self) {
+        if self.disk_status == 2 {
+            // ERROR (wait for error to be cleared)
+            return;
+        }
+        match self.disk_cmd {
+            0 => {
+                // IDLE
+                self.disk_status = 0; // IDLE
+            }
+            1 => {
+                // READ disk into memory
+                self.disk_status = 1;
+                let size: usize = self.sector_count as usize * SECTOR_SIZE as usize;
+                let mut buf: Vec<u8> = vec![0u8; size];
+                match self.read_sectors(self.sector, self.sector_count, &mut buf) {
+                    Ok(()) => {}
+                    Err(error) => {
+                        println!("{:?}", error);
+                        self.disk_status = 2;
+                        return;
+                    }
+                }
+                match self.bus().dma_write(self.disk_bufptr, &buf) {
+                    Ok(()) => {}
+                    Err(error) => {
+                        println!("{:?}", error);
+                        self.disk_status = 2;
+                        return;
+                    }
+                }
+                self.disk_status = 0; // IDLE
+            }
+            2 => {
+                // WRITE memory into disk
+                self.disk_status = 1;
+                let size: usize = self.sector_count as usize * SECTOR_SIZE as usize;
+                let mut buf: Vec<u8> = vec![0u8; size];
+                match self.bus().dma_read(self.disk_bufptr, &mut buf) {
+                    Ok(()) => {}
+                    Err(error) => {
+                        println!("{:?}", error);
+                        self.disk_status = 2;
+                        return;
+                    }
+                }
+                match self.write_sectors(self.sector, self.sector_count, &buf) {
+                    Ok(()) => {}
+                    Err(error) => {
+                        println!("{:?}", error);
+                        self.disk_status = 2;
+                        return;
+                    }
+                }
+                self.disk_status = 0; // IDLE
+            }
+            _ => unreachable!(),
         }
     }
 
@@ -49,7 +122,53 @@ impl Disk {
         self.disk_bufptr = u64::from_le_bytes(self.data[0x10..0x18].try_into().unwrap());
     }
 
-    fn disk_io(&mut self) {}
+    fn read_sector(
+        &mut self,
+        sector: u64,
+        buf: &mut [u8; SECTOR_SIZE as usize],
+    ) -> std::io::Result<()> {
+        self.file.seek(SeekFrom::Start(sector * SECTOR_SIZE))?;
+        self.file.read_exact(buf)?;
+        Ok(())
+    }
+
+    fn write_sector(
+        &mut self,
+        sector: u64,
+        buf: &[u8; SECTOR_SIZE as usize],
+    ) -> std::io::Result<()> {
+        self.file.seek(SeekFrom::Start(sector * SECTOR_SIZE))?;
+        self.file.write_all(buf)?;
+        self.file.sync_data()?;
+        Ok(())
+    }
+
+    fn read_sectors(
+        &mut self,
+        start_sector: u64,
+        sector_count: u32,
+        buf: &mut [u8],
+    ) -> std::io::Result<()> {
+        debug_assert_eq!(buf.len(), sector_count as usize * SECTOR_SIZE as usize);
+        self.file
+            .seek(SeekFrom::Start(start_sector * SECTOR_SIZE))?;
+        self.file.read_exact(buf)?;
+        Ok(())
+    }
+
+    fn write_sectors(
+        &mut self,
+        start_sector: u64,
+        sector_count: u32,
+        buf: &[u8],
+    ) -> std::io::Result<()> {
+        debug_assert_eq!(buf.len(), sector_count as usize * SECTOR_SIZE as usize);
+        self.file
+            .seek(SeekFrom::Start(start_sector * SECTOR_SIZE))?;
+        self.file.write_all(buf)?;
+        self.file.sync_data()?;
+        Ok(())
+    }
 }
 
 impl MemoryDevice for Disk {
@@ -101,12 +220,13 @@ impl MemoryDevice for Disk {
         let offset = addr as usize;
         self.data[offset] = value as u8;
         self.update_regs();
+        self.operation();
 
         Ok(())
     }
 
     fn write_hword(&mut self, addr: u64, value: u64) -> Result<(), DeviceError> {
-        if addr >= self.size + 1 {
+        if addr + 2 > self.size {
             return Err(DeviceError::AddrOutOfRange { addr });
         }
 
@@ -114,12 +234,13 @@ impl MemoryDevice for Disk {
         let bytes = (value as u16).to_le_bytes();
         self.data[offset..offset + 2].copy_from_slice(&bytes);
         self.update_regs();
+        self.operation();
 
         Ok(())
     }
 
     fn write_word(&mut self, addr: u64, value: u64) -> Result<(), DeviceError> {
-        if addr >= self.size + 3 {
+        if addr + 4 > self.size {
             return Err(DeviceError::AddrOutOfRange { addr });
         }
 
@@ -127,12 +248,13 @@ impl MemoryDevice for Disk {
         let bytes = (value as u32).to_le_bytes();
         self.data[offset..offset + 4].copy_from_slice(&bytes);
         self.update_regs();
+        self.operation();
 
         Ok(())
     }
 
     fn write_dword(&mut self, addr: u64, value: u64) -> Result<(), DeviceError> {
-        if addr >= self.size + 7 {
+        if addr + 8 > self.size {
             return Err(DeviceError::AddrOutOfRange { addr });
         }
 
@@ -140,6 +262,7 @@ impl MemoryDevice for Disk {
         let bytes = (value as u64).to_le_bytes();
         self.data[offset..offset + 8].copy_from_slice(&bytes);
         self.update_regs();
+        self.operation();
 
         Ok(())
     }
@@ -158,9 +281,15 @@ impl DmaDevice for Disk {
     fn attach_bus(&mut self, bus: Weak<Bus>) {
         self.bus = Some(bus);
     }
-    fn bus_ref(&self) -> &Weak<Bus> {
+    // fn bus_ref(&self) -> &Weak<Bus> {
+    //     match &self.bus {
+    //         Some(b) => b,
+    //         None => panic!("No bus"),
+    //     }
+    // }
+    fn bus(&self) -> Rc<Bus> {
         match &self.bus {
-            Some(b) => b,
+            Some(b) => b.upgrade().expect("Bus dropped before device"),
             None => panic!("No bus"),
         }
     }

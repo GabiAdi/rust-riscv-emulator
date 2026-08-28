@@ -91,7 +91,7 @@ impl MemoryDevice for Ram {
     }
 
     fn write_hword(&mut self, addr: u64, value: u64) -> Result<(), DeviceError> {
-        if addr as usize + 1 >= self.data.len() {
+        if addr as usize + 2 > self.data.len() {
             return Err(DeviceError::AddrOutOfRange { addr });
         }
         let offset = addr as usize;
@@ -101,7 +101,7 @@ impl MemoryDevice for Ram {
     }
 
     fn write_word(&mut self, addr: u64, value: u64) -> Result<(), DeviceError> {
-        if addr as usize + 3 >= self.data.len() {
+        if addr as usize + 4 > self.data.len() {
             return Err(DeviceError::AddrOutOfRange { addr });
         }
         let offset = addr as usize;
@@ -111,7 +111,7 @@ impl MemoryDevice for Ram {
     }
 
     fn write_dword(&mut self, addr: u64, value: u64) -> Result<(), DeviceError> {
-        if addr as usize + 7 >= self.data.len() {
+        if addr as usize + 8 > self.data.len() {
             return Err(DeviceError::AddrOutOfRange { addr });
         }
         let offset = addr as usize;
