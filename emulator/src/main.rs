@@ -263,8 +263,8 @@ fn main() {
     let mut interrupt_devices: Vec<RefCell<Box<dyn InterruptDevice>>> = Vec::new();
     let mut dma_devices: Vec<Box<RefCell<dyn DmaDevice>>> = Vec::new();
 
-    let data = fs::read("/home/user/rust-risc-v/assembly/testc.bin").unwrap();
-    // let data = fs::read("/home/user/rust-risc-v/assembly/firmware.bin").unwrap();
+    // let data = fs::read("/home/user/rust-risc-v/assembly/testc.bin").unwrap();
+    let data = fs::read("/home/user/rust-risc-v/assembly/firmware.bin").unwrap();
 
     // let rom = Rom::new(0, data);
 
@@ -277,7 +277,7 @@ fn main() {
 
     let disk = Rc::new(RefCell::new(
         Disk::new(
-            0xFFFFFFFFFFFFFF08,
+            0xFFFFFFFFFFFFFF10,
             "/home/user/rust-risc-v/disks/disk_zero.img",
         )
         .unwrap(),

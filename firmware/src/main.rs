@@ -2,17 +2,18 @@
 #![no_main]
 
 mod allocator;
-mod console;
-mod csr;
+mod drivers;
 mod trap;
 
 extern crate alloc;
 
 use core::{panic::PanicInfo, u64};
 
+use alloc::format;
+
 use crate::{
     allocator::LinkedListAllocator,
-    console::{ConsoleWriter, print_char, print_str, print_u64},
+    drivers::{console::ConsoleWriter, disk::Disk, mmio_driver::MmioDriver},
 };
 
 unsafe extern "C" {
@@ -25,6 +26,9 @@ unsafe extern "C" {
 #[global_allocator]
 static ALLOCATOR: LinkedListAllocator = LinkedListAllocator::new_uninit();
 
+const MMIO_CONSOLE: u64 = 0xFFFFFFFFFFFFFF00;
+const MMIO_DISK: u64 = 0xFFFFFFFFFFFFFF10;
+
 #[unsafe(link_section = ".text.start")]
 #[unsafe(no_mangle)]
 #[unsafe(naked)]
@@ -36,11 +40,6 @@ pub extern "C" fn _start() -> ! {
         "li t0, (1 << 11)",
         "csrw mie, t0",
         "csrsi mstatus, 0x8",
-        "li t0, 1000000000",
-        "li t1, 0xFFFFFFFFFFFFFF08",
-        "sd t0, 0(t1)",
-        "li t0, 1",
-        "sb t0, 8(t1)",
         "j main",
         trap = sym _trap_entry,
     );
@@ -69,32 +68,48 @@ pub extern "C" fn main() -> ! {
     //     console::print_char(b'\n');
     // }
 
-    test_vector();
+    let mut console = ConsoleWriter::new(MMIO_CONSOLE).unwrap();
+    let disk = Disk::new(MMIO_DISK).unwrap();
+
+    let data = disk.read_sectors(2000, 1);
+
+    for dword in data.chunks_exact(8) {
+        let value = u64::from_le_bytes(dword.try_into().unwrap());
+        core::fmt::write(&mut console, format_args!("{:#018x}\n", value));
+    }
+
+    // test_vector(console);
 
     ebreak();
     loop {}
 }
 
-fn test_vector() {
+fn test_vector(mut console: ConsoleWriter) {
     use alloc::vec::Vec;
     let mut v: Vec<u64> = Vec::new();
 
     for i in 0..10000 {
         v.push(i);
         if v[i as usize] % 100 == 0 {
-            console::print_str("Element of vector: ");
-            console::print_u64(v[i as usize]);
-            console::print_char(b'\n');
+            core::fmt::write(
+                &mut console,
+                format_args!("Element of vector: {}\n", v[i as usize]),
+            );
+            // console.print_str(format_args!("Element of vector: {}", v[i as usize]));
+            // console.print_str("Element of vector: ");
+            // console.print_u64(v[i as usize]);
+            // console.print_char(b'\n');
         }
     }
 
-    print_str("Done allocation\n");
+    console.print_str("Done allocation\n");
 
     for n in v {
         if n % 100 == 0 {
-            console::print_str("Element of vector: ");
-            console::print_u64(n);
-            console::print_char(b'\n');
+            core::fmt::write(&mut console, format_args!("Element of vector: {}\n", n));
+            // console::print_str("Element of vector: ");
+            // console::print_u64(n);
+            // console::print_char(b'\n');
         }
     }
 }
@@ -106,7 +121,8 @@ extern "C" fn ebreak() {
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    console::print_str("PANIC AT: ");
+    let console = unsafe { ConsoleWriter::new_unchecked(MMIO_CONSOLE) };
+    console.print_str("PANIC AT: ");
     if let Some(location) = info.location() {
         // console::print_str(location.file());
         // console::print_str(":");
@@ -114,9 +130,9 @@ fn panic(info: &PanicInfo) -> ! {
         // console::print_str("\n");
     }
     if let Some(msg) = info.message().as_str() {
-        console::print_str(msg);
+        console.print_str(msg);
     }
-    console::print_str("\n");
+    console.print_str("\n");
     unsafe {
         core::arch::asm!(".4byte 0x00100073");
     }

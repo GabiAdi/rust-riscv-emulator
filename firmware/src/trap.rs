@@ -1,9 +1,12 @@
 // trap.rs
 use core::arch::global_asm;
 
+use alloc::collections;
+
 use crate::{
-    console::{print_char, print_str, print_u64},
-    csr, ebreak,
+    MMIO_CONSOLE,
+    drivers::console::{self, ConsoleWriter},
+    ebreak,
 };
 
 global_asm!(
@@ -118,10 +121,12 @@ fn timer_external_isr() {
         MMIO_TIMER_COUNT.write_volatile(0);
     }
 
-    let cycles = unsafe { csr::read_mcycle() };
-    print_str("Cycles: ");
-    print_u64(cycles);
-    print_char(b'\n');
+    // let cycles = unsafe { csr::read_mcycle() };
+    // let mut console = ConsoleWriter::new_unchecked(MMIO_CONSOLE);
+    // core::fmt::write(&mut console, format_args!("Cycles: {}\n", cycles));
+    // console.print_str("Cycles: ");
+    // print_u64(cycles);
+    // print_char(b'\n');
 
     // - 12 for _start
 }
@@ -139,9 +144,9 @@ fn keyboard_isr() {
 fn timer_isr() {}
 
 fn exception_handler(_code: u64) {
-    print_str("Exception: ");
-    print_u64(_code);
-    print_str("\n");
-    panic!("Illegal instruction! ");
+    // print_str("Exception: ");
+    // print_u64(_code);
+    // print_str("\n");
+    // panic!("Illegal instruction! ");
     // ebreak();
 }

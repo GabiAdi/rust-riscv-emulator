@@ -7,6 +7,7 @@ pub struct KeyboardDevice {
     start_addr: u64,
     end_addr: u64,
     size: u64,
+    device_id: u64,
     last_key: Option<u8>,
     pending: bool,
 }
@@ -15,10 +16,15 @@ impl KeyboardDevice {
     pub fn new(start_addr: u64) -> KeyboardDevice {
         KeyboardDevice {
             start_addr,
-            end_addr: start_addr + 8,
-            size: 8,
+            end_addr: start_addr + 0x10,
+            size: 0x10,
             last_key: None,
             pending: false,
+            // bits 0 - 60 identifier
+            // bit 61 - DMA device
+            // bit 62 - interrupt device
+            // bit 63 - memory device (always set)
+            device_id: 0xC000000000000001,
         }
     }
 
@@ -49,6 +55,9 @@ impl MemoryDevice for KeyboardDevice {
     }
 
     fn read_dword(&self, addr: u64) -> Result<u64, DeviceError> {
+        if addr == 0x8 {
+            return Ok(self.device_id);
+        }
         Ok(self.last_key.unwrap_or(0) as u64)
     }
 

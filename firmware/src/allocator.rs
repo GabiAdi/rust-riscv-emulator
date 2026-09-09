@@ -3,8 +3,6 @@ use core::cell::UnsafeCell;
 use core::ptr;
 use spin::Mutex;
 
-use crate::console::{self, print_char, print_str, print_u64};
-
 const MIN_BLOCK_SIZE: usize = core::mem::size_of::<FreeBlock>();
 
 struct FreeBlock {

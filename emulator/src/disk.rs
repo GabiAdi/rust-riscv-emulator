@@ -20,12 +20,12 @@ pub struct Disk {
 
     data: Vec<u8>,
 
-    sector: u64,       // 0x0
+    sector: u64,       // 0x0 sector number
     sector_count: u32, // 0x8 Number of sectors
     disk_cmd: u16,     // 0xC 0 = idle, 1 = read, 2 = write
     disk_status: u16,  // 0xE 0 = idle, 1 = busy, 2 = error
     disk_bufptr: u64,  // 0x10 Addr of DMA buffer
-
+    device_id: u64,    // 0x18 Device identifier (0xA000000000000002)
     bus: Option<Weak<Bus>>,
 
     file: File,
@@ -35,23 +35,32 @@ impl Disk {
     pub fn new(start_addr: u64, path: &str) -> std::io::Result<Disk> {
         let file = OpenOptions::new().read(true).write(true).open(path)?;
 
-        Ok(Disk {
+        let mut disk = Disk {
             start_addr,
-            end_addr: start_addr + 0x18,
+            end_addr: start_addr + 0x20,
             size: 0x18,
 
-            data: vec![0u8; 0x18],
+            data: vec![0u8; 0x20],
 
             sector: 0,
             sector_count: 0,
             disk_cmd: 0,
             disk_status: 0,
             disk_bufptr: 0,
+            // bits 0 - 60 identifier
+            // bit 61 - DMA device
+            // bit 62 - interrupt device
+            // bit 63 - memory device (always set)
+            device_id: 0xA000000000000002,
 
             bus: None,
 
             file,
-        })
+        };
+
+        disk.data[0x18..0x20].copy_from_slice(&disk.device_id.to_le_bytes());
+
+        Ok(disk)
     }
 
     fn operation(&mut self) {

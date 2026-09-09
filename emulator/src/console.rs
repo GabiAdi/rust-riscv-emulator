@@ -7,6 +7,7 @@ pub struct Console {
     start_addr: u64,
     end_addr: u64,
     size: u64,
+    device_id: u64,
 }
 
 impl Console {
@@ -14,8 +15,9 @@ impl Console {
         Console {
             character: None,
             start_addr,
-            end_addr: start_addr + 8,
-            size: 8,
+            end_addr: start_addr + 0x10,
+            size: 0x10,
+            device_id: 0xC000000000000003,
         }
     }
 }
@@ -55,6 +57,9 @@ impl MemoryDevice for Console {
     }
 
     fn read_dword(&self, addr: u64) -> Result<u64, DeviceError> {
+        if addr == 0x8 {
+            return Ok(self.device_id);
+        }
         Ok(match self.character {
             Some(character) => character as u64,
             None => 0,
