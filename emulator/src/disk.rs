@@ -83,6 +83,7 @@ impl Disk {
                     Err(error) => {
                         println!("{:?}", error);
                         self.disk_status = 2;
+                        self.update_data();
                         return;
                     }
                 }
@@ -91,6 +92,7 @@ impl Disk {
                     Err(error) => {
                         println!("{:?}", error);
                         self.disk_status = 2;
+                        self.update_data();
                         return;
                     }
                 }
@@ -106,6 +108,7 @@ impl Disk {
                     Err(error) => {
                         println!("{:?}", error);
                         self.disk_status = 2;
+                        self.update_data();
                         return;
                     }
                 }
@@ -114,6 +117,7 @@ impl Disk {
                     Err(error) => {
                         println!("{:?}", error);
                         self.disk_status = 2;
+                        self.update_data();
                         return;
                     }
                 }
@@ -121,6 +125,8 @@ impl Disk {
             }
             _ => unreachable!(),
         }
+        self.disk_cmd = 0; // IDLE
+        self.update_data();
     }
 
     fn update_regs(&mut self) {
@@ -131,25 +137,12 @@ impl Disk {
         self.disk_bufptr = u64::from_le_bytes(self.data[0x10..0x18].try_into().unwrap());
     }
 
-    fn read_sector(
-        &mut self,
-        sector: u64,
-        buf: &mut [u8; SECTOR_SIZE as usize],
-    ) -> std::io::Result<()> {
-        self.file.seek(SeekFrom::Start(sector * SECTOR_SIZE))?;
-        self.file.read_exact(buf)?;
-        Ok(())
-    }
-
-    fn write_sector(
-        &mut self,
-        sector: u64,
-        buf: &[u8; SECTOR_SIZE as usize],
-    ) -> std::io::Result<()> {
-        self.file.seek(SeekFrom::Start(sector * SECTOR_SIZE))?;
-        self.file.write_all(buf)?;
-        self.file.sync_data()?;
-        Ok(())
+    fn update_data(&mut self) {
+        self.data[0x00..0x08].copy_from_slice(&self.sector.to_le_bytes());
+        self.data[0x08..0x0C].copy_from_slice(&self.sector_count.to_le_bytes());
+        self.data[0x0C..0x0E].copy_from_slice(&self.disk_cmd.to_le_bytes());
+        self.data[0x0E..0x10].copy_from_slice(&self.disk_status.to_le_bytes());
+        self.data[0x10..0x18].copy_from_slice(&self.disk_bufptr.to_le_bytes());
     }
 
     fn read_sectors(

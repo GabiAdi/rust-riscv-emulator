@@ -9,7 +9,7 @@ extern crate alloc;
 
 use core::{panic::PanicInfo, u64};
 
-use alloc::format;
+use alloc::{format, vec::Vec};
 
 use crate::{
     allocator::LinkedListAllocator,
@@ -28,6 +28,7 @@ static ALLOCATOR: LinkedListAllocator = LinkedListAllocator::new_uninit();
 
 const MMIO_CONSOLE: u64 = 0xFFFFFFFFFFFFFF00;
 const MMIO_DISK: u64 = 0xFFFFFFFFFFFFFF10;
+const SECTOR_SIZE: u32 = 512;
 
 #[unsafe(link_section = ".text.start")]
 #[unsafe(no_mangle)]
@@ -69,9 +70,18 @@ pub extern "C" fn main() -> ! {
     // }
 
     let mut console = ConsoleWriter::new(MMIO_CONSOLE).unwrap();
-    let disk = Disk::new(MMIO_DISK).unwrap();
+    let disk = Disk::new(MMIO_DISK, SECTOR_SIZE).unwrap();
 
-    let data = disk.read_sectors(2000, 1);
+    let mut buf: Vec<u8> = Vec::new();
+    buf.resize(1 * SECTOR_SIZE as usize, 0xab);
+    disk.write_sectors(2000, 1, buf);
+
+    let mut read = disk.read_sectors(2000, 1);
+    read[120] = 0xff;
+
+    disk.write_sectors(2000, 1, read);
+
+    let data = disk.read_sectors(2000, 2);
 
     for dword in data.chunks_exact(8) {
         let value = u64::from_le_bytes(dword.try_into().unwrap());

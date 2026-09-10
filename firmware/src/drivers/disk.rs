@@ -4,7 +4,6 @@ use crate::{
 };
 use alloc::vec::Vec;
 
-const SECTOR_SIZE: usize = 512;
 const CMD_IDLE: u16 = 0;
 const CMD_READ: u16 = 1;
 const CMD_WRITE: u16 = 2;
@@ -14,6 +13,7 @@ const STATUS_ERROR: u16 = 2;
 
 pub struct Disk {
     addr: u64,
+    sector_size: u32,
 }
 
 enum DiskRegister {
@@ -33,11 +33,11 @@ enum DiskRegisterId {
 }
 
 impl Disk {
-    pub unsafe fn new_unchecked(addr: u64) -> Disk {
-        Disk { addr }
+    pub unsafe fn new_unchecked(addr: u64, sector_size: u32) -> Disk {
+        Disk { addr, sector_size }
     }
 
-    pub fn new(addr: u64) -> Option<Disk> {
+    pub fn new(addr: u64, sector_size: u32) -> Option<Disk> {
         let mmio: *mut u64 = (addr + 0x18) as *mut u64;
         let device_id: u64 = unsafe { mmio.read_volatile() };
 
@@ -45,11 +45,11 @@ impl Disk {
             return None;
         }
 
-        Some(Disk { addr })
+        Some(Disk { addr, sector_size })
     }
 
     pub fn read_sectors(&self, sector: u64, num_sectors: u32) -> Vec<u8> {
-        let size = num_sectors as usize * SECTOR_SIZE as usize;
+        let size = num_sectors as usize * self.sector_size as usize;
         let mut buf: Vec<u8> = Vec::new();
         buf.resize(size, 0);
         let addr = buf.as_mut_ptr() as u64;
@@ -73,6 +73,32 @@ impl Disk {
         }
 
         buf
+    }
+
+    pub fn write_sectors(&self, sector: u64, num_sectors: u32, buf: Vec<u8>) {
+        let size = num_sectors as usize * self.sector_size as usize;
+
+        debug_assert_eq!(size, buf.len());
+
+        let addr = buf.as_ptr() as u64;
+
+        self.write_register(DiskRegister::Sector(sector));
+        self.write_register(DiskRegister::NumSectors(num_sectors));
+        self.write_register(DiskRegister::BufferAddr(addr));
+        self.write_register(DiskRegister::DiskCmd(CMD_WRITE));
+
+        loop {
+            let DiskRegister::DiskStatus(status) = self.read_register(DiskRegisterId::DiskStatus)
+            else {
+                unreachable!()
+            };
+
+            if status == STATUS_IDLE {
+                break;
+            }
+
+            core::hint::spin_loop();
+        }
     }
 
     fn write_register(&self, register: DiskRegister) {
