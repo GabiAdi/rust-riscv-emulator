@@ -276,11 +276,7 @@ fn main() {
     memory_devices.push(RefCell::new(Box::new(console)));
 
     let disk = Rc::new(RefCell::new(
-        Disk::new(
-            0xFFFFFFFFFFFFFF10,
-            "/home/user/rust-risc-v/disks/disk_zero.img",
-        )
-        .unwrap(),
+        Disk::new(0xFFFFFFFFFFFFFF10, "/home/user/rust-risc-v/disks/disk.img").unwrap(),
     ));
 
     memory_devices.push(RefCell::new(Box::new(disk.clone())));

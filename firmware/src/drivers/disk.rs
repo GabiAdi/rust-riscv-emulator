@@ -1,7 +1,4 @@
-use crate::{
-    MMIO_CONSOLE,
-    drivers::{console::ConsoleWriter, mmio_driver::MmioDriver},
-};
+use crate::drivers::mmio_driver::MmioDriver;
 use alloc::vec::Vec;
 
 const CMD_IDLE: u16 = 0;
@@ -172,6 +169,7 @@ impl MmioDriver for Disk {
         unsafe { mmio.read_volatile() }
     }
 }
+
 // 0x0  u64 sector number
 // 0x8  u32 Number of sectors
 // 0xC  u16 Disk cmd 0 = idle, 1 = read, 2 = write

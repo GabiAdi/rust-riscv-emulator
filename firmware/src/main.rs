@@ -13,7 +13,7 @@ use alloc::{format, vec::Vec};
 
 use crate::{
     allocator::LinkedListAllocator,
-    drivers::{console::ConsoleWriter, disk::Disk, mmio_driver::MmioDriver},
+    drivers::{console::ConsoleWriter, disk::Disk, ext2::Ext2fs, mmio_driver::MmioDriver},
 };
 
 unsafe extern "C" {
@@ -71,22 +71,30 @@ pub extern "C" fn main() -> ! {
 
     let mut console = ConsoleWriter::new(MMIO_CONSOLE).unwrap();
     let disk = Disk::new(MMIO_DISK, SECTOR_SIZE).unwrap();
+    let ext2fs = Ext2fs::new(disk).unwrap();
 
-    let mut buf: Vec<u8> = Vec::new();
-    buf.resize(1 * SECTOR_SIZE as usize, 0xab);
-    disk.write_sectors(2000, 1, buf);
+    // let mut buf: Vec<u8> = Vec::new();
+    // buf.resize(1 * SECTOR_SIZE as usize, 0xab);
+    // disk.write_sectors(2000, 1, buf);
 
-    let mut read = disk.read_sectors(2000, 1);
-    read[120] = 0xff;
+    // let mut read = disk.read_sectors(2000, 1);
+    // read[120] = 0xff;
+    //
+    // disk.write_sectors(2000, 1, read);
+    //
+    // let data = disk.read_sectors(2000, 2);
 
-    disk.write_sectors(2000, 1, read);
+    let superblock = ext2fs.get_superblock();
 
-    let data = disk.read_sectors(2000, 2);
+    core::fmt::write(
+        &mut console,
+        format_args!("{:#010x}\n", superblock.s_feature_compat),
+    );
 
-    for dword in data.chunks_exact(8) {
-        let value = u64::from_le_bytes(dword.try_into().unwrap());
-        core::fmt::write(&mut console, format_args!("{:#018x}\n", value));
-    }
+    // for dword in data.chunks_exact(8) {
+    //     let value = u64::from_le_bytes(dword.try_into().unwrap());
+    //     core::fmt::write(&mut console, format_args!("{:#018x}\n", value));
+    // }
 
     // test_vector(console);
 
