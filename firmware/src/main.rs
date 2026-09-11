@@ -13,7 +13,12 @@ use alloc::{format, vec::Vec};
 
 use crate::{
     allocator::LinkedListAllocator,
-    drivers::{console::ConsoleWriter, disk::Disk, ext2::Ext2fs, mmio_driver::MmioDriver},
+    drivers::{
+        console::ConsoleWriter,
+        disk::Disk,
+        ext2::{Ext2fs, Superblock},
+        mmio_driver::MmioDriver,
+    },
 };
 
 unsafe extern "C" {
@@ -84,13 +89,12 @@ pub extern "C" fn main() -> ! {
     //
     // let data = disk.read_sectors(2000, 2);
 
-    let superblock = ext2fs.get_superblock();
+    // let superblock = Superblock::from_block(ext2fs.get_blocks(1, 1));
+    let root_inode = ext2fs.get_inode(2);
 
-    core::fmt::write(
-        &mut console,
-        format_args!("{:#010x}\n", superblock.s_feature_compat),
-    );
+    core::fmt::write(&mut console, format_args!("{:#010x}\n", root_inode.i_mode));
 
+    // core::fmt::write(&mut console, format_args!("{}\n", superblock.s_inode_size));
     // for dword in data.chunks_exact(8) {
     //     let value = u64::from_le_bytes(dword.try_into().unwrap());
     //     core::fmt::write(&mut console, format_args!("{:#018x}\n", value));
@@ -142,10 +146,10 @@ fn panic(info: &PanicInfo) -> ! {
     let console = unsafe { ConsoleWriter::new_unchecked(MMIO_CONSOLE) };
     console.print_str("PANIC AT: ");
     if let Some(location) = info.location() {
-        // console::print_str(location.file());
-        // console::print_str(":");
-        // console::print_u64(location.line() as u64);
-        // console::print_str("\n");
+        console.print_str(location.file());
+        console.print_str(":");
+        console.print_u64(location.line() as u64);
+        console.print_str("\n");
     }
     if let Some(msg) = info.message().as_str() {
         console.print_str(msg);

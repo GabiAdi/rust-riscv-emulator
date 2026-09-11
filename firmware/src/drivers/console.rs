@@ -1,3 +1,5 @@
+use core::fmt;
+
 use crate::{MMIO_CONSOLE, drivers::mmio_driver::MmioDriver};
 
 pub struct ConsoleWriter {
@@ -60,6 +62,11 @@ impl ConsoleWriter {
                 self.print_char(buf[i]);
             }
         }
+    }
+
+    pub fn print_fmt(fmt: core::fmt::Arguments) -> Result<(), fmt::Error> {
+        let mut console = unsafe { Self::new_unchecked(MMIO_CONSOLE) };
+        core::fmt::write(&mut console, fmt)
     }
 }
 
