@@ -67,9 +67,10 @@ impl LinkedListAllocator {
     pub unsafe fn init(&self, heap_start: usize, heap_end: usize) {
         unsafe {
             let state = &mut *self.inner.lock();
-            state.heap_start = heap_start;
+            let aligned_start = align_up(heap_start, core::mem::align_of::<FreeBlock>());
+            state.heap_start = aligned_start;
             state.heap_end = heap_end;
-            state.head.size = heap_end - heap_start;
+            state.head.size = 0;
             let block_ptr = FreeBlock::new_at(state.heap_start, state.heap_size(), None);
             state.head.next = Some(block_ptr);
         }
@@ -97,6 +98,7 @@ impl LinkedListAllocator {
 unsafe impl GlobalAlloc for LinkedListAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         unsafe {
+            let layout = adjust_layout(layout);
             let state = &mut *self.inner.lock();
 
             let mut prev = &mut state.head as *mut FreeBlock;
@@ -125,29 +127,36 @@ unsafe impl GlobalAlloc for LinkedListAllocator {
                 return ptr::null_mut();
             }
 
-            let next_free: Option<*mut FreeBlock>;
-            match (*current_free).next {
-                Some(free_block) => {
-                    let gap_size = (*free_block).start_addr() - alloc_end;
-                    if gap_size >= MIN_BLOCK_SIZE {
-                        next_free = Some(FreeBlock::new_at(alloc_end, gap_size, Some(free_block)));
-                    } else {
-                        next_free = Some(free_block);
-                    }
-                }
-                None => {
-                    let gap_size = state.heap_end - alloc_end;
-                    if gap_size >= MIN_BLOCK_SIZE {
-                        next_free = Some(FreeBlock::new_at(alloc_end, gap_size, None));
-                    } else {
-                        next_free = None;
-                    }
-                }
-            }
+            let current_end = (*current_free).end_addr();
+
+            let fb_align = core::mem::align_of::<FreeBlock>();
+            let free_hdr_start = align_up(alloc_end, fb_align);
+
+            let next_free: Option<*mut FreeBlock> = if free_hdr_start <= current_end
+                && current_end - free_hdr_start >= MIN_BLOCK_SIZE
+            {
+                let gap_size = current_end - free_hdr_start;
+                Some(FreeBlock::new_at(
+                    free_hdr_start,
+                    gap_size,
+                    (*current_free).next,
+                ))
+            } else {
+                (*current_free).next
+            };
 
             if alloc_start != (*current_free).start_addr() {
-                (*current_free).size = alloc_start - (*current_free).start_addr();
-                (*current_free).next = next_free;
+                let prefix_size = alloc_start - (*current_free).start_addr();
+                if prefix_size >= MIN_BLOCK_SIZE {
+                    (*current_free).size = prefix_size;
+                    (*current_free).next = next_free;
+                } else {
+                    if prev == &mut state.head as *mut FreeBlock {
+                        state.head.next = next_free;
+                    } else {
+                        (*prev).next = next_free;
+                    }
+                }
             } else {
                 if prev == &mut state.head as *mut FreeBlock {
                     state.head.next = next_free;
@@ -162,6 +171,7 @@ unsafe impl GlobalAlloc for LinkedListAllocator {
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         unsafe {
+            let layout = adjust_layout(layout);
             let state = &mut *self.inner.lock();
             let start_addr = ptr as usize;
 
@@ -196,4 +206,10 @@ unsafe impl GlobalAlloc for LinkedListAllocator {
 
 fn align_up(addr: usize, align: usize) -> usize {
     (addr + align - 1) & !(align - 1)
+}
+
+fn adjust_layout(layout: Layout) -> Layout {
+    let align = layout.align().max(core::mem::align_of::<FreeBlock>());
+    let size = align_up(layout.size(), align).max(MIN_BLOCK_SIZE);
+    Layout::from_size_align(size, align).unwrap()
 }

@@ -1,4 +1,7 @@
-use alloc::vec::Vec;
+use alloc::{
+    string::{String, ToString},
+    vec::Vec,
+};
 
 use crate::{
     MMIO_CONSOLE,
@@ -101,16 +104,20 @@ pub struct Inode {
     pub i_osd2: [u8; 12],
 }
 
+pub struct Directory {
+    pub inode: u32,
+    pub rec_len: u16,
+    pub name_len: u8,
+    pub file_type: u8,
+    // pub name: Vec<u8>,
+    pub name: String,
+}
+
 fn read_hword(data: &[u8], offset: usize) -> u16 {
     u16::from_le_bytes(data[offset..offset + 2].try_into().unwrap())
 }
 
 fn read_word(data: &[u8], offset: usize) -> u32 {
-    // let mut console = unsafe { ConsoleWriter::new_unchecked(MMIO_CONSOLE) };
-    // core::fmt::write(
-    //     &mut console,
-    //     format_args!("Data size: {}, offset: {}\n", data.len(), offset),
-    // );
     u32::from_le_bytes(data[offset..offset + 4].try_into().unwrap())
 }
 
@@ -228,6 +235,47 @@ impl Superblock {
             s_default_mount_options: read_word(&block, 256),
             s_first_meta_bg: read_word(&block, 260),
         }
+    }
+}
+
+impl Directory {
+    pub fn from_block(block: &Vec<u8>, offset: usize) -> Option<Directory> {
+        if offset + 8 > 1024 {
+            return None;
+        }
+
+        let inode = read_word(block, 0 + offset);
+        let rec_len = read_hword(block, 4 + offset);
+        let name_len = block[6 + offset];
+        let file_type = block[7 + offset];
+
+        if rec_len == 0 || name_len == 0 {
+            return None;
+        }
+
+        let name_start = offset + 8;
+        let name = String::from_utf8_lossy(&block[name_start..(name_start + name_len as usize)])
+            .into_owned();
+
+        Some(Directory {
+            inode,
+            rec_len,
+            name_len,
+            file_type,
+            name,
+        })
+    }
+
+    pub fn vec_from_block(block: &Vec<u8>) -> Vec<Directory> {
+        let mut offset: usize = 0;
+        let mut directories: Vec<Directory> = Vec::new();
+
+        while let Some(directory) = Self::from_block(block, offset) {
+            offset += directory.rec_len as usize;
+            directories.push(directory);
+        }
+
+        directories
     }
 }
 

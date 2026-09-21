@@ -1,5 +1,7 @@
 use core::fmt;
 
+use alloc::vec::Vec;
+
 use crate::{MMIO_CONSOLE, drivers::mmio_driver::MmioDriver};
 
 pub struct ConsoleWriter {
@@ -31,6 +33,14 @@ impl ConsoleWriter {
     pub unsafe fn print_char(&self, c: u8) {
         unsafe {
             self.mmio_console.write_volatile(c);
+        }
+    }
+
+    pub fn print_vec_u8(&self, v: &Vec<u8>) {
+        for c in v {
+            unsafe {
+                self.print_char(*c);
+            }
         }
     }
 

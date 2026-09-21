@@ -1,9 +1,9 @@
 ENTRY(_start)
 
 _ram_start  = 0x0;
-_ram_size   = 0x5000000;
+_ram_size   = 0x8000000;
 _ram_end    = _ram_start + _ram_size;
-_stack_size = 0x100000;
+_stack_size = 0x1000000;
 
 SECTIONS {
     . = _ram_start;

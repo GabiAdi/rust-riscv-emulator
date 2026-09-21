@@ -9,15 +9,14 @@ extern crate alloc;
 
 use core::{panic::PanicInfo, u64};
 
-use alloc::{format, vec::Vec};
+use alloc::{string::String, vec::Vec};
 
 use crate::{
     allocator::LinkedListAllocator,
     drivers::{
         console::ConsoleWriter,
         disk::Disk,
-        ext2::{Ext2fs, Superblock},
-        mmio_driver::MmioDriver,
+        ext2::{Directory, Ext2fs},
     },
 };
 
@@ -59,48 +58,23 @@ pub extern "C" fn main() -> ! {
         ALLOCATOR.init(heap_start, heap_end);
     }
 
-    // use alloc::vec::Vec;
-    // let mut v: Vec<u64> = Vec::with_capacity(4);
-    //
-    // v.push(42);
-    // v.push(53);
-    // v.push(67);
-    // v.push(43);
-    // v.push(55);
-    //
-    // for n in v {
-    //     console::print_str("Element of vector: ");
-    //     console::print_u64(n);
-    //     console::print_char(b'\n');
-    // }
-
     let mut console = ConsoleWriter::new(MMIO_CONSOLE).unwrap();
     let disk = Disk::new(MMIO_DISK, SECTOR_SIZE).unwrap();
     let ext2fs = Ext2fs::new(disk).unwrap();
 
-    // let mut buf: Vec<u8> = Vec::new();
-    // buf.resize(1 * SECTOR_SIZE as usize, 0xab);
-    // disk.write_sectors(2000, 1, buf);
-
-    // let mut read = disk.read_sectors(2000, 1);
-    // read[120] = 0xff;
-    //
-    // disk.write_sectors(2000, 1, read);
-    //
-    // let data = disk.read_sectors(2000, 2);
-
     // let superblock = Superblock::from_block(ext2fs.get_blocks(1, 1));
     let root_inode = ext2fs.get_inode(2);
 
-    core::fmt::write(&mut console, format_args!("{:#010x}\n", root_inode.i_mode));
+    let data = ext2fs.get_blocks(root_inode.i_block.direct_pointers[0], 1);
 
-    // core::fmt::write(&mut console, format_args!("{}\n", superblock.s_inode_size));
-    // for dword in data.chunks_exact(8) {
-    //     let value = u64::from_le_bytes(dword.try_into().unwrap());
-    //     core::fmt::write(&mut console, format_args!("{:#018x}\n", value));
-    // }
+    let directories: Vec<Directory> = Directory::vec_from_block(&data);
 
-    // test_vector(console);
+    for dir in directories {
+        console.print_str(&dir.name);
+        console.print_str("\n");
+    }
+
+    ConsoleWriter::print_fmt(format_args!("\n"));
 
     ebreak();
     loop {}
@@ -136,6 +110,19 @@ fn test_vector(mut console: ConsoleWriter) {
     }
 }
 
+fn test_vector_directory() {
+    let mut v: Vec<Directory> = Vec::new();
+    for i in 0..10000 {
+        v.push(Directory {
+            inode: i,
+            rec_len: i as u16 * 2,
+            name_len: i as u8,
+            file_type: i as u8,
+            name: String::new(),
+        });
+    }
+}
+
 #[unsafe(naked)]
 extern "C" fn ebreak() {
     core::arch::naked_asm!("ebreak");
@@ -155,13 +142,10 @@ fn panic(info: &PanicInfo) -> ! {
         console.print_str(msg);
     }
     console.print_str("\n");
+
     unsafe {
         core::arch::asm!(".4byte 0x00100073");
     }
-
-    // let mut w = ConsoleWriter;
-    // let _ = core::fmt::write(&mut w, format_args!("PANIC: {}\n", info));
-    // unsafe { core::arch::asm!("ebreak") }
 
     loop {}
 }

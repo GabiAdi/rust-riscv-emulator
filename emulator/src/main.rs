@@ -268,7 +268,7 @@ fn main() {
 
     // let rom = Rom::new(0, data);
 
-    let mut ram = Ram::new(0, 0x5000000);
+    let mut ram = Ram::new(0, 128 * 1024 * 1024);
     ram.write_file(0, data);
     let console = Console::new(0xFFFFFFFFFFFFFF00);
     // devices.push(Box::new(rom));
