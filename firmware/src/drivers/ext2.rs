@@ -109,8 +109,19 @@ pub struct Directory {
     pub rec_len: u16,
     pub name_len: u8,
     pub file_type: u8,
-    // pub name: Vec<u8>,
     pub name: String,
+}
+
+pub struct File {
+    pub directory: Directory,
+    pub ext2fs: Ext2fs,
+    pub inode: Inode,
+    pub current_block: u32,
+    pub bytes_read: u64,
+}
+
+pub struct PointerBlock {
+    pub pointers: [u32; 256],
 }
 
 fn read_hword(data: &[u8], offset: usize) -> u16 {
@@ -235,6 +246,131 @@ impl Superblock {
             s_default_mount_options: read_word(&block, 256),
             s_first_meta_bg: read_word(&block, 260),
         }
+    }
+}
+
+impl PointerBlock {
+    pub fn from_block(block: Vec<u8>) -> PointerBlock {
+        assert_eq!(block.len(), 1024);
+        let mut pointers: [u32; 256] = [0; 256];
+
+        for i in 0..256 {
+            pointers[i] = read_word(&block, i * 4);
+        }
+
+        PointerBlock { pointers }
+    }
+}
+
+impl File {
+    pub fn from_directory(directory: Directory, ext2fs: Ext2fs) -> Option<File> {
+        let inode = ext2fs.get_inode(directory.inode);
+
+        if inode.i_mode & 0x8000 != 0x8000 {
+            return None;
+        }
+
+        Some(File {
+            directory,
+            ext2fs,
+            inode,
+            current_block: 0,
+            bytes_read: 0,
+        })
+    }
+
+    pub fn read_bytes(&mut self, bytes: u64) -> Option<Vec<u8>> {
+        // let mut buffer: Vec<u8> = Vec::new();
+        // let remaining_bytes = bytes;
+        // buffer.resize(bytes as usize, 0);
+        //
+        // while let block = Some(self.next_block())
+        //     && remaining_bytes != 0
+        // {
+        //
+        // }
+        //
+        // Some(buffer)
+        todo!()
+    }
+
+    pub fn read_all(&mut self) -> Option<Vec<u8>> {
+        let mut buffer: Vec<u8> = Vec::new();
+        let mut remaining_bytes = self.inode.i_size;
+        // buffer.resize(self.inode.i_size as usize, 0);
+        buffer.reserve(self.inode.i_size as usize);
+
+        while remaining_bytes != 0 {
+            let to_copy = if remaining_bytes < 1024 {
+                remaining_bytes
+            } else {
+                1024
+            };
+
+            let block = self.next_block()?;
+            self.current_block += 1;
+
+            for i in 0..to_copy {
+                buffer.push(block[i as usize]);
+            }
+
+            remaining_bytes -= to_copy;
+        }
+
+        Some(buffer)
+    }
+
+    fn next_block(&mut self) -> Option<Vec<u8>> {
+        // 0..12 Direct
+        // 12..268 Indirect
+        // 268..65804 Double
+        // 65804..16843020 Triple
+        let block_number = match self.current_block {
+            0..12 => self.inode.i_block.direct_pointers[self.current_block as usize],
+            12..268 => {
+                let direct_pointers_block = PointerBlock::from_block(
+                    self.ext2fs
+                        .get_blocks(self.inode.i_block.indirect_pointer, 1),
+                );
+                let direct_index = self.current_block as usize - 12;
+                direct_pointers_block.pointers[direct_index]
+            }
+            268..65804 => {
+                let indirect_pointers_block = PointerBlock::from_block(
+                    self.ext2fs
+                        .get_blocks(self.inode.i_block.double_indirect_pointer, 1),
+                );
+                let indirect_index = (self.current_block as usize - 268) / 256;
+                let direct_pointers_block = PointerBlock::from_block(
+                    self.ext2fs
+                        .get_blocks(indirect_pointers_block.pointers[indirect_index], 1),
+                );
+                let direct_index = (self.current_block as usize - 12) % 256;
+                direct_pointers_block.pointers[direct_index]
+            }
+            65804..16843020 => {
+                let double_indirect_pointers_block = PointerBlock::from_block(
+                    self.ext2fs
+                        .get_blocks(self.inode.i_block.triple_indirect_pointer, 1),
+                );
+                let double_indirect_index = (self.current_block as usize - 65804) / 65536;
+                let indirect_pointers_block = PointerBlock::from_block(self.ext2fs.get_blocks(
+                    double_indirect_pointers_block.pointers[double_indirect_index],
+                    1,
+                ));
+                let indirect_index = ((self.current_block as usize - 65804) / 256) % 256;
+                let direct_pointers_block = PointerBlock::from_block(
+                    self.ext2fs
+                        .get_blocks(indirect_pointers_block.pointers[indirect_index], 1),
+                );
+                let direct_index = (self.current_block as usize - 12) % 256;
+                direct_pointers_block.pointers[direct_index]
+            }
+            _ => {
+                return None;
+            }
+        };
+        Some(self.ext2fs.get_blocks(block_number, 1))
     }
 }
 

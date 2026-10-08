@@ -16,7 +16,7 @@ use crate::{
     drivers::{
         console::ConsoleWriter,
         disk::Disk,
-        ext2::{Directory, Ext2fs},
+        ext2::{Directory, Ext2fs, File},
     },
 };
 
@@ -69,10 +69,36 @@ pub extern "C" fn main() -> ! {
 
     let directories: Vec<Directory> = Directory::vec_from_block(&data);
 
+    let mut test_dir: Option<Directory> = None;
+
     for dir in directories {
-        console.print_str(&dir.name);
+        let name = &dir.name.clone();
+        if dir.name == "1m.txt" {
+            test_dir = Some(dir);
+        }
+        console.print_str(name);
         console.print_str("\n");
     }
+
+    let mut file = File::from_directory(test_dir.unwrap(), ext2fs).unwrap();
+    let data = file.read_all().unwrap();
+
+    // for i in 0..data.len() {
+    //     unsafe {
+    //         console.print_char(data[i as usize]);
+    //     }
+    // }
+
+    console.print_str("Done!\n");
+    ConsoleWriter::print_fmt(format_args!("Size: {}", data.len()));
+
+    // let inode = ext2fs.get_inode(inode_number);
+    // let block = ext2fs.get_blocks(inode.i_block.direct_pointers[0], 1);
+    // for i in 0..inode.i_size {
+    //     unsafe {
+    //         console.print_char(block[i as usize]);
+    //     }
+    // }
 
     ConsoleWriter::print_fmt(format_args!("\n"));
 

@@ -3,3 +3,5 @@
 /rvc_test
 /assembly/*
 /disks/*
+mount.sh
+unmount.sh

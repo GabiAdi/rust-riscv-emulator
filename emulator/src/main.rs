@@ -331,6 +331,9 @@ fn main() {
     //     }
     // }
 
+    cpu.borrow_mut().run_until_halt();
+    return;
+
     loop {
         print!(">> ");
         io::stdout().flush().unwrap();
