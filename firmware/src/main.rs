@@ -81,22 +81,38 @@ pub extern "C" fn main() -> ! {
     }
 
     let mut file = File::from_directory(test_dir.unwrap(), ext2fs).unwrap();
-    let data = file.read_all().unwrap();
+    file.seek(20);
+    let data = file.read_delim('\n' as u8).unwrap();
+    // let data = file.read_all().unwrap();
+    // let data = file.read_bytes(6000).unwrap();
+    // let data2 = file.read_all().unwrap();
+    // let data2 = file.read_bytes(43).unwrap();
 
-    // for i in 0..data.len() {
+    for i in 0..data.len() {
+        unsafe {
+            console.print_char(data[i as usize]);
+        }
+    }
+    // for i in 0..data2.len() {
     //     unsafe {
-    //         console.print_char(data[i as usize]);
+    //         console.print_char(data2[i as usize]);
     //     }
     // }
 
-    console.print_str("Done!\n");
-    ConsoleWriter::print_fmt(format_args!("Size: {}", data.len()));
+    console.print_str("\nDone!\n");
+    ConsoleWriter::print_fmt(format_args!("Size1: {}, Size2: {}\n\n", data.len(), 0));
 
     // let inode = ext2fs.get_inode(inode_number);
     // let block = ext2fs.get_blocks(inode.i_block.direct_pointers[0], 1);
     // for i in 0..inode.i_size {
     //     unsafe {
     //         console.print_char(block[i as usize]);
+    //     }
+    // }
+
+    // for c in data {
+    //     unsafe {
+    //         console.print_char(c);
     //     }
     // }
 
@@ -133,19 +149,6 @@ fn test_vector(mut console: ConsoleWriter) {
             // console::print_u64(n);
             // console::print_char(b'\n');
         }
-    }
-}
-
-fn test_vector_directory() {
-    let mut v: Vec<Directory> = Vec::new();
-    for i in 0..10000 {
-        v.push(Directory {
-            inode: i,
-            rec_len: i as u16 * 2,
-            name_len: i as u8,
-            file_type: i as u8,
-            name: String::new(),
-        });
     }
 }
 

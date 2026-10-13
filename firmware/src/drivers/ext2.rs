@@ -1,15 +1,6 @@
-use alloc::{
-    string::{String, ToString},
-    vec::Vec,
-};
+use alloc::{string::String, vec::Vec};
 
-use crate::{
-    MMIO_CONSOLE,
-    drivers::{
-        console::{self, ConsoleWriter},
-        disk::Disk,
-    },
-};
+use crate::drivers::disk::Disk;
 
 pub struct Ext2fs {
     disk: Disk,
@@ -19,109 +10,116 @@ pub struct Ext2fs {
     block_group_count: u32,
 }
 
-pub struct Superblock {
-    pub s_inodes_count: u32,
-    pub s_blocks_count: u32,
-    pub s_r_blocks_count: u32,
-    pub s_free_blocks_count: u32,
-    pub s_free_inodes_count: u32,
-    pub s_first_data_block: u32,
-    pub s_log_size: u32,
-    pub s_log_frag_size: u32,
-    pub s_blocks_per_group: u32,
-    pub s_frags_per_group: u32,
-    pub s_inodes_per_group: u32,
-    pub s_mtime: u32,
-    pub s_wtime: u32,
-    pub s_mnt_count: u16,
-    pub s_max_mnt_count: u16,
-    pub s_magic: u16,
-    pub s_state: u16,
-    pub s_errors: u16,
-    pub s_minor_rev_level: u16,
-    pub s_lastcheck: u32,
-    pub s_checkinterval: u32,
-    pub s_creator_os: u32,
-    pub s_rev_level: u32,
-    pub s_def_resuid: u16,
-    pub s_def_resgid: u16,
-    pub s_first_ino: u32,
-    pub s_inode_size: u16,
-    pub s_block_group_nr: u16,
-    pub s_feature_compat: u32,
-    pub s_feature_incompat: u32,
-    pub s_feature_ro_compat: u32,
-    pub s_uuid: u128,
-    pub s_volume_name: u128,
-    pub s_last_mounted: [u8; 64],
-    pub s_algo_bitmap: u32,
-    pub s_prealloc_blocks: u8,
-    pub s_prealloc_dir_blocks: u8,
-    pub s_journal_uuid: u128,
-    pub s_journal_inum: u32,
-    pub s_journal_dev: u32,
-    pub s_last_orphan: u32,
-    pub s_hash_seed: u128,
-    pub s_def_hash_version: u8,
-    pub s_default_mount_options: u32,
-    pub s_first_meta_bg: u32,
+struct Superblock {
+    s_inodes_count: u32,
+    s_blocks_count: u32,
+    s_r_blocks_count: u32,
+    s_free_blocks_count: u32,
+    s_free_inodes_count: u32,
+    s_first_data_block: u32,
+    s_log_size: u32,
+    s_log_frag_size: u32,
+    s_blocks_per_group: u32,
+    s_frags_per_group: u32,
+    s_inodes_per_group: u32,
+    s_mtime: u32,
+    s_wtime: u32,
+    s_mnt_count: u16,
+    s_max_mnt_count: u16,
+    s_magic: u16,
+    s_state: u16,
+    s_errors: u16,
+    s_minor_rev_level: u16,
+    s_lastcheck: u32,
+    s_checkinterval: u32,
+    s_creator_os: u32,
+    s_rev_level: u32,
+    s_def_resuid: u16,
+    s_def_resgid: u16,
+    s_first_ino: u32,
+    s_inode_size: u16,
+    s_block_group_nr: u16,
+    s_feature_compat: u32,
+    s_feature_incompat: u32,
+    s_feature_ro_compat: u32,
+    s_uuid: u128,
+    s_volume_name: u128,
+    s_last_mounted: [u8; 64],
+    s_algo_bitmap: u32,
+    s_prealloc_blocks: u8,
+    s_prealloc_dir_blocks: u8,
+    s_journal_uuid: u128,
+    s_journal_inum: u32,
+    s_journal_dev: u32,
+    s_last_orphan: u32,
+    s_hash_seed: u128,
+    s_def_hash_version: u8,
+    s_default_mount_options: u32,
+    s_first_meta_bg: u32,
 }
 
-pub struct BlockGroupDescriptor {
-    pub bg_block_bitmap: u32,
-    pub bg_inode_bitmap: u32,
-    pub bg_inode_table: u32,
-    pub bg_free_blocks_count: u16,
-    pub bg_free_inodes_count: u16,
-    pub bg_used_dirs_count: u16,
+struct BlockGroupDescriptor {
+    bg_block_bitmap: u32,
+    bg_inode_bitmap: u32,
+    bg_inode_table: u32,
+    bg_free_blocks_count: u16,
+    bg_free_inodes_count: u16,
+    bg_used_dirs_count: u16,
 }
 
 pub struct InodeBlockPointers {
     pub direct_pointers: [u32; 12],
-    pub indirect_pointer: u32,
-    pub double_indirect_pointer: u32,
-    pub triple_indirect_pointer: u32,
+    indirect_pointer: u32,
+    double_indirect_pointer: u32,
+    triple_indirect_pointer: u32,
 }
 
 pub struct Inode {
-    pub i_mode: u16,
-    pub i_uid: u16,
-    pub i_size: u32,
-    pub i_atime: u32,
-    pub i_ctime: u32,
-    pub i_mtime: u32,
-    pub i_dtime: u32,
-    pub i_gid: u16,
-    pub i_links_count: u16,
-    pub i_blocks: u32,
-    pub i_flags: u32,
-    pub i_osd1: u32,
+    i_mode: u16,
+    i_uid: u16,
+    i_size: u32,
+    i_atime: u32,
+    i_ctime: u32,
+    i_mtime: u32,
+    i_dtime: u32,
+    i_gid: u16,
+    i_links_count: u16,
+    i_blocks: u32,
+    i_flags: u32,
+    i_osd1: u32,
     pub i_block: InodeBlockPointers,
-    pub i_generation: u32,
-    pub i_file_acl: u32,
-    pub i_dir_acl: u32,
-    pub i_faddr: u32,
-    pub i_osd2: [u8; 12],
+    i_generation: u32,
+    i_file_acl: u32,
+    i_dir_acl: u32,
+    i_faddr: u32,
+    i_osd2: [u8; 12],
 }
 
 pub struct Directory {
-    pub inode: u32,
-    pub rec_len: u16,
-    pub name_len: u8,
-    pub file_type: u8,
+    inode: u32,
+    rec_len: u16,
+    name_len: u8,
+    file_type: u8,
     pub name: String,
 }
 
 pub struct File {
-    pub directory: Directory,
-    pub ext2fs: Ext2fs,
-    pub inode: Inode,
-    pub current_block: u32,
-    pub bytes_read: u64,
+    directory: Directory,
+    ext2fs: Ext2fs,
+    inode: Inode,
+    current_block: u32,
+    remaining_bytes: u32,
+}
+
+struct BlockRange {
+    start_block: u32,
+    end_block: u32,
+    offset: u32,
+    bytes: u32,
 }
 
 pub struct PointerBlock {
-    pub pointers: [u32; 256],
+    pointers: [u32; 256],
 }
 
 fn read_hword(data: &[u8], offset: usize) -> u16 {
@@ -270,70 +268,235 @@ impl File {
             return None;
         }
 
+        let remaining_bytes = inode.i_size;
+
         Some(File {
             directory,
             ext2fs,
             inode,
             current_block: 0,
-            bytes_read: 0,
+            remaining_bytes,
         })
     }
 
-    pub fn read_bytes(&mut self, bytes: u64) -> Option<Vec<u8>> {
-        // let mut buffer: Vec<u8> = Vec::new();
-        // let remaining_bytes = bytes;
-        // buffer.resize(bytes as usize, 0);
-        //
-        // while let block = Some(self.next_block())
-        //     && remaining_bytes != 0
-        // {
-        //
-        // }
-        //
-        // Some(buffer)
-        todo!()
+    pub fn seek(&mut self, bytes: u32) {
+        if bytes >= self.remaining_bytes {
+            self.remaining_bytes = 0;
+        }
+
+        self.remaining_bytes -= bytes;
+        self.current_block += bytes / 1024;
     }
 
-    pub fn read_all(&mut self) -> Option<Vec<u8>> {
+    pub fn read_bytes(&mut self, bytes: u32) -> Option<Vec<u8>> {
         let mut buffer: Vec<u8> = Vec::new();
-        let mut remaining_bytes = self.inode.i_size;
-        // buffer.resize(self.inode.i_size as usize, 0);
-        buffer.reserve(self.inode.i_size as usize);
+        let mut to_read = bytes;
+        buffer.resize(
+            if bytes > self.remaining_bytes {
+                self.remaining_bytes
+            } else {
+                bytes
+            } as usize,
+            0,
+        );
 
-        while remaining_bytes != 0 {
-            let to_copy = if remaining_bytes < 1024 {
-                remaining_bytes
+        let mut block_ranges: Vec<BlockRange> = Vec::new();
+
+        while self.remaining_bytes != 0 && to_read != 0 {
+            let to_copy = if to_read < 1024 || self.remaining_bytes < 1024 {
+                if self.remaining_bytes > to_read {
+                    to_read
+                } else {
+                    self.remaining_bytes
+                }
             } else {
                 1024
             };
 
-            let block = self.next_block()?;
-            self.current_block += 1;
+            let block_number = self.next_block_number()?;
+            let offset = (self.inode.i_size - self.remaining_bytes) % 1024;
 
-            for i in 0..to_copy {
-                buffer.push(block[i as usize]);
+            if let Some(last_range) = block_ranges.last_mut()
+                && last_range.end_block == block_number
+            {
+                last_range.end_block += 1;
+                last_range.bytes += to_copy;
+            } else {
+                block_ranges.push(BlockRange {
+                    start_block: block_number,
+                    end_block: block_number + 1,
+                    bytes: if offset + to_copy > 1024 {
+                        1024 - offset
+                    } else {
+                        to_copy
+                    },
+                    offset,
+                });
             }
 
-            remaining_bytes -= to_copy;
+            self.remaining_bytes -= to_copy;
+            to_read -= to_copy;
+        }
+
+        let offset: usize = 0;
+
+        for block_range in block_ranges {
+            let block_number = block_range.start_block;
+            let block_count = block_range.end_block - block_range.start_block;
+            let data_block = self.ext2fs.get_blocks(block_number, block_count);
+
+            buffer[offset..(offset + block_range.bytes as usize)].copy_from_slice(
+                &data_block[block_range.offset as usize
+                    ..block_range.bytes as usize + block_range.offset as usize],
+            );
         }
 
         Some(buffer)
     }
 
-    fn next_block(&mut self) -> Option<Vec<u8>> {
-        // 0..12 Direct
-        // 12..268 Indirect
-        // 268..65804 Double
-        // 65804..16843020 Triple
-        let block_number = match self.current_block {
-            0..12 => self.inode.i_block.direct_pointers[self.current_block as usize],
+    pub fn read_all(&mut self) -> Option<Vec<u8>> {
+        let mut buffer: Vec<u8> = Vec::new();
+        buffer.resize(self.remaining_bytes as usize, 0);
+
+        let mut block_ranges: Vec<BlockRange> = Vec::new();
+
+        while self.remaining_bytes != 0 {
+            let to_copy = if self.remaining_bytes < 1024 {
+                self.remaining_bytes
+            } else {
+                1024
+            };
+
+            let block_number = self.next_block_number()?;
+            let offset = (self.inode.i_size - self.remaining_bytes) % 1024;
+
+            if let Some(last_range) = block_ranges.last_mut()
+                && last_range.end_block == block_number
+            {
+                last_range.end_block += 1;
+                last_range.bytes += to_copy;
+            } else {
+                block_ranges.push(BlockRange {
+                    start_block: block_number,
+                    end_block: block_number + 1,
+                    bytes: if offset + to_copy > 1024 {
+                        1024 - offset
+                    } else {
+                        to_copy
+                    },
+                    offset,
+                });
+            }
+
+            self.remaining_bytes -= to_copy;
+        }
+
+        let offset: usize = 0;
+
+        for block_range in block_ranges {
+            let block_number = block_range.start_block;
+            let block_count = block_range.end_block - block_range.start_block;
+            let data_block = self.ext2fs.get_blocks(block_number, block_count);
+
+            buffer[offset..(offset + block_range.bytes as usize)].copy_from_slice(
+                &data_block[block_range.offset as usize
+                    ..block_range.bytes as usize + block_range.offset as usize],
+            );
+        }
+
+        Some(buffer)
+    }
+
+    pub fn read_delim(&mut self, delimiter: u8) -> Option<Vec<u8>> {
+        let mut buffer: Vec<u8> = Vec::new();
+        let mut buffer_size: usize = 0;
+
+        let mut block_ranges: Vec<BlockRange> = Vec::new();
+
+        while self.remaining_bytes != 0 {
+            let block_number = self.next_block_number()?;
+            let block = self.ext2fs.get_blocks(block_number, 1);
+
+            let mut delim_index: Option<u16> = None;
+
+            let offset = (self.inode.i_size - self.remaining_bytes) % 1024;
+            for i in offset as usize..block.len() {
+                if block[i] == delimiter {
+                    delim_index = Some(i as u16);
+                    break;
+                }
+            }
+
+            let to_copy = if let Some(index) = delim_index {
+                index as u32 - offset
+            } else if self.remaining_bytes < 1024 {
+                self.remaining_bytes
+            } else {
+                1024
+            };
+
+            let extra_char: u32 = if delim_index != None { 1 } else { 0 };
+
+            if let Some(last_range) = block_ranges.last_mut()
+                && last_range.end_block == block_number
+            {
+                last_range.end_block += 1;
+                last_range.bytes += to_copy;
+            } else {
+                block_ranges.push(BlockRange {
+                    start_block: block_number,
+                    end_block: block_number + 1,
+                    bytes: if offset + to_copy > 1024 {
+                        1024 - offset + extra_char
+                    } else {
+                        to_copy + extra_char
+                    },
+                    offset,
+                });
+            }
+
+            self.remaining_bytes -= to_copy;
+            buffer_size += to_copy as usize;
+
+            if delim_index != None {
+                self.remaining_bytes -= 1;
+                buffer_size += 1;
+                break;
+            }
+        }
+
+        let offset: usize = 0;
+
+        buffer.resize(buffer_size, 0);
+
+        for block_range in block_ranges {
+            let block_number = block_range.start_block;
+            let block_count = block_range.end_block - block_range.start_block;
+            let data_block = self.ext2fs.get_blocks(block_number, block_count);
+
+            buffer[offset..(offset + block_range.bytes as usize)].copy_from_slice(
+                &data_block[block_range.offset as usize
+                    ..block_range.bytes as usize + block_range.offset as usize],
+            );
+        }
+
+        Some(buffer)
+    }
+
+    fn next_block_number(&mut self) -> Option<u32> {
+        if self.remaining_bytes == 0 {
+            return None;
+        }
+
+        match self.current_block {
+            0..12 => Some(self.inode.i_block.direct_pointers[self.current_block as usize]),
             12..268 => {
                 let direct_pointers_block = PointerBlock::from_block(
                     self.ext2fs
                         .get_blocks(self.inode.i_block.indirect_pointer, 1),
                 );
                 let direct_index = self.current_block as usize - 12;
-                direct_pointers_block.pointers[direct_index]
+                Some(direct_pointers_block.pointers[direct_index])
             }
             268..65804 => {
                 let indirect_pointers_block = PointerBlock::from_block(
@@ -346,7 +509,7 @@ impl File {
                         .get_blocks(indirect_pointers_block.pointers[indirect_index], 1),
                 );
                 let direct_index = (self.current_block as usize - 12) % 256;
-                direct_pointers_block.pointers[direct_index]
+                Some(direct_pointers_block.pointers[direct_index])
             }
             65804..16843020 => {
                 let double_indirect_pointers_block = PointerBlock::from_block(
@@ -364,13 +527,12 @@ impl File {
                         .get_blocks(indirect_pointers_block.pointers[indirect_index], 1),
                 );
                 let direct_index = (self.current_block as usize - 12) % 256;
-                direct_pointers_block.pointers[direct_index]
+                Some(direct_pointers_block.pointers[direct_index])
             }
             _ => {
                 return None;
             }
-        };
-        Some(self.ext2fs.get_blocks(block_number, 1))
+        }
     }
 }
 
