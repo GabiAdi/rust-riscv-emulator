@@ -18,7 +18,7 @@ impl ConsoleWriter {
     }
 
     pub fn new(addr: u64) -> Option<ConsoleWriter> {
-        let mmio: *mut u64 = (addr + 0x8) as *mut u64;
+        let mmio: *mut u64 = addr as *mut u64;
         let device_id: u64 = unsafe { mmio.read_volatile() };
 
         if device_id != 0xC000000000000003 {

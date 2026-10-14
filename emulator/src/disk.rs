@@ -20,12 +20,12 @@ pub struct Disk {
 
     data: Vec<u8>,
 
-    sector: u64,       // 0x0 sector number
-    sector_count: u32, // 0x8 Number of sectors
-    disk_cmd: u16,     // 0xC 0 = idle, 1 = read, 2 = write
-    disk_status: u16,  // 0xE 0 = idle, 1 = busy, 2 = error
-    disk_bufptr: u64,  // 0x10 Addr of DMA buffer
-    device_id: u64,    // 0x18 Device identifier (0xA000000000000002)
+    device_id: u64,    // 0x0 Device identifier (0xA000000000000002)
+    sector: u64,       // 0x8 sector number
+    sector_count: u32, // 0x10 Number of sectors
+    disk_cmd: u16,     // 0x14 0 = idle, 1 = read, 2 = write
+    disk_status: u16,  // 0x16 0 = idle, 1 = busy, 2 = error
+    disk_bufptr: u64,  // 0x18 Addr of DMA buffer
     bus: Option<Weak<Bus>>,
 
     file: File,
@@ -38,27 +38,27 @@ impl Disk {
         let mut disk = Disk {
             start_addr,
             end_addr: start_addr + 0x20,
-            size: 0x18,
+            size: 0x20,
 
             data: vec![0u8; 0x20],
 
-            sector: 0,
-            sector_count: 0,
-            disk_cmd: 0,
-            disk_status: 0,
-            disk_bufptr: 0,
             // bits 0 - 60 identifier
             // bit 61 - DMA device
             // bit 62 - interrupt device
             // bit 63 - memory device (always set)
             device_id: 0xA000000000000002,
 
+            sector: 0,
+            sector_count: 0,
+            disk_cmd: 0,
+            disk_status: 0,
+            disk_bufptr: 0,
             bus: None,
 
             file,
         };
 
-        disk.data[0x18..0x20].copy_from_slice(&disk.device_id.to_le_bytes());
+        disk.data[0x00..0x08].copy_from_slice(&disk.device_id.to_le_bytes());
 
         Ok(disk)
     }
@@ -130,19 +130,19 @@ impl Disk {
     }
 
     fn update_regs(&mut self) {
-        self.sector = u64::from_le_bytes(self.data[0x00..0x08].try_into().unwrap());
-        self.sector_count = u32::from_le_bytes(self.data[0x08..0x0C].try_into().unwrap());
-        self.disk_cmd = u16::from_le_bytes(self.data[0x0C..0x0E].try_into().unwrap());
-        self.disk_status = u16::from_le_bytes(self.data[0x0E..0x10].try_into().unwrap());
-        self.disk_bufptr = u64::from_le_bytes(self.data[0x10..0x18].try_into().unwrap());
+        self.sector = u64::from_le_bytes(self.data[0x08..0x10].try_into().unwrap());
+        self.sector_count = u32::from_le_bytes(self.data[0x10..0x14].try_into().unwrap());
+        self.disk_cmd = u16::from_le_bytes(self.data[0x14..0x16].try_into().unwrap());
+        self.disk_status = u16::from_le_bytes(self.data[0x16..0x18].try_into().unwrap());
+        self.disk_bufptr = u64::from_le_bytes(self.data[0x18..0x20].try_into().unwrap());
     }
 
     fn update_data(&mut self) {
-        self.data[0x00..0x08].copy_from_slice(&self.sector.to_le_bytes());
-        self.data[0x08..0x0C].copy_from_slice(&self.sector_count.to_le_bytes());
-        self.data[0x0C..0x0E].copy_from_slice(&self.disk_cmd.to_le_bytes());
-        self.data[0x0E..0x10].copy_from_slice(&self.disk_status.to_le_bytes());
-        self.data[0x10..0x18].copy_from_slice(&self.disk_bufptr.to_le_bytes());
+        self.data[0x08..0x10].copy_from_slice(&self.sector.to_le_bytes());
+        self.data[0x10..0x14].copy_from_slice(&self.sector_count.to_le_bytes());
+        self.data[0x14..0x16].copy_from_slice(&self.disk_cmd.to_le_bytes());
+        self.data[0x16..0x18].copy_from_slice(&self.disk_status.to_le_bytes());
+        self.data[0x18..0x20].copy_from_slice(&self.disk_bufptr.to_le_bytes());
     }
 
     fn read_sectors(
@@ -228,7 +228,7 @@ impl MemoryDevice for Disk {
     }
 
     fn write_hword(&mut self, addr: u64, value: u64) -> Result<(), DeviceError> {
-        if addr + 2 > self.size {
+        if addr + 1 >= self.size {
             return Err(DeviceError::AddrOutOfRange { addr });
         }
 
@@ -242,7 +242,7 @@ impl MemoryDevice for Disk {
     }
 
     fn write_word(&mut self, addr: u64, value: u64) -> Result<(), DeviceError> {
-        if addr + 4 > self.size {
+        if addr + 3 >= self.size {
             return Err(DeviceError::AddrOutOfRange { addr });
         }
 
@@ -256,7 +256,7 @@ impl MemoryDevice for Disk {
     }
 
     fn write_dword(&mut self, addr: u64, value: u64) -> Result<(), DeviceError> {
-        if addr + 8 > self.size {
+        if addr + 7 >= self.size {
             return Err(DeviceError::AddrOutOfRange { addr });
         }
 

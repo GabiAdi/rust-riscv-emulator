@@ -77,7 +77,7 @@ pub struct InodeBlockPointers {
 pub struct Inode {
     i_mode: u16,
     i_uid: u16,
-    i_size: u32,
+    pub i_size: u32,
     i_atime: u32,
     i_ctime: u32,
     i_mtime: u32,
@@ -277,6 +277,23 @@ impl File {
             current_block: 0,
             remaining_bytes,
         })
+    }
+
+    pub fn from_path(filename: &str, ext2fs: Ext2fs) -> Option<File> {
+        let root_inode = ext2fs.get_inode(2);
+        let data = ext2fs.get_blocks(root_inode.i_block.direct_pointers[0], 1);
+
+        let directories: Vec<Directory> = Directory::vec_from_block(&data);
+
+        let mut file_dir: Option<Directory> = None;
+
+        for dir in directories {
+            if dir.name == filename {
+                file_dir = Some(dir);
+            }
+        }
+
+        Self::from_directory(file_dir?, ext2fs)
     }
 
     pub fn seek(&mut self, bytes: u32) {
@@ -574,6 +591,15 @@ impl Directory {
         }
 
         directories
+    }
+
+    fn push_into_vec_from_block(block: &Vec<u8>, directiories: &mut Vec<Directory>) {
+        let mut offset: usize = 0;
+
+        while let Some(directory) = Self::from_block(block, offset) {
+            offset += directory.rec_len as usize;
+            directiories.push(directory);
+        }
     }
 }
 

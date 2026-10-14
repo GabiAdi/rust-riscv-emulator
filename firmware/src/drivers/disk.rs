@@ -1,4 +1,4 @@
-use crate::drivers::mmio_driver::MmioDriver;
+use crate::drivers::{console::ConsoleWriter, mmio_driver::MmioDriver};
 use alloc::vec::Vec;
 
 const CMD_IDLE: u16 = 0;
@@ -13,7 +13,7 @@ pub struct Disk {
     sector_size: u32,
 }
 
-enum DiskRegister {
+pub enum DiskRegister {
     Sector(u64),
     NumSectors(u32),
     DiskCmd(u16),
@@ -35,7 +35,7 @@ impl Disk {
     }
 
     pub fn new(addr: u64, sector_size: u32) -> Option<Disk> {
-        let mmio: *mut u64 = (addr + 0x18) as *mut u64;
+        let mmio: *mut u64 = addr as *mut u64;
         let device_id: u64 = unsafe { mmio.read_volatile() };
 
         if device_id != 0xA000000000000002 {
@@ -98,35 +98,34 @@ impl Disk {
         }
     }
 
-    fn write_register(&self, register: DiskRegister) {
-        // let mut console = unsafe { ConsoleWriter::new_unchecked(MMIO_CONSOLE) };
+    pub fn write_register(&self, register: DiskRegister) {
         match register {
             DiskRegister::Sector(sector) => {
-                let mmio: *mut u64 = (self.addr) as *mut u64;
+                let mmio: *mut u64 = (self.addr + 0x08) as *mut u64;
                 unsafe {
                     mmio.write_volatile(sector);
                 }
             }
             DiskRegister::NumSectors(num_sectors) => {
-                let mmio: *mut u32 = (self.addr + 0x8) as *mut u32;
+                let mmio: *mut u32 = (self.addr + 0x10) as *mut u32;
                 unsafe {
                     mmio.write_volatile(num_sectors);
                 }
             }
             DiskRegister::DiskCmd(disk_cmd) => {
-                let mmio: *mut u16 = (self.addr + 0xC) as *mut u16;
+                let mmio: *mut u16 = (self.addr + 0x14) as *mut u16;
                 unsafe {
                     mmio.write_volatile(disk_cmd);
                 }
             }
             DiskRegister::DiskStatus(disk_status) => {
-                let mmio: *mut u16 = (self.addr + 0xE) as *mut u16;
+                let mmio: *mut u16 = (self.addr + 0x16) as *mut u16;
                 unsafe {
                     mmio.write_volatile(disk_status);
                 }
             }
             DiskRegister::BufferAddr(buffer_addr) => {
-                let mmio: *mut u64 = (self.addr + 0x10) as *mut u64;
+                let mmio: *mut u64 = (self.addr + 0x18) as *mut u64;
                 unsafe {
                     mmio.write_volatile(buffer_addr);
                 }
@@ -134,26 +133,26 @@ impl Disk {
         }
     }
 
-    fn read_register(&self, register: DiskRegisterId) -> DiskRegister {
+    pub fn read_register(&self, register: DiskRegisterId) -> DiskRegister {
         match register {
             DiskRegisterId::Sector => {
-                let mmio: *mut u64 = (self.addr) as *mut u64;
+                let mmio: *mut u64 = (self.addr + 0x08) as *mut u64;
                 unsafe { DiskRegister::Sector(mmio.read_volatile()) }
             }
             DiskRegisterId::NumSectors => {
-                let mmio: *mut u32 = (self.addr + 0x8) as *mut u32;
+                let mmio: *mut u32 = (self.addr + 0x10) as *mut u32;
                 unsafe { DiskRegister::NumSectors(mmio.read_volatile()) }
             }
             DiskRegisterId::DiskCmd => {
-                let mmio: *mut u16 = (self.addr + 0xC) as *mut u16;
+                let mmio: *mut u16 = (self.addr + 0x14) as *mut u16;
                 unsafe { DiskRegister::DiskCmd(mmio.read_volatile()) }
             }
             DiskRegisterId::DiskStatus => {
-                let mmio: *mut u16 = (self.addr + 0xE) as *mut u16;
+                let mmio: *mut u16 = (self.addr + 0x16) as *mut u16;
                 unsafe { DiskRegister::DiskStatus(mmio.read_volatile()) }
             }
             DiskRegisterId::BufferAddr => {
-                let mmio: *mut u64 = (self.addr + 0x10) as *mut u64;
+                let mmio: *mut u64 = (self.addr + 0x18) as *mut u64;
                 unsafe { DiskRegister::BufferAddr(mmio.read_volatile()) }
             }
         }

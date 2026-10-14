@@ -57,7 +57,7 @@ impl MemoryDevice for Console {
     }
 
     fn read_dword(&self, addr: u64) -> Result<u64, DeviceError> {
-        if addr == 0x8 {
+        if addr == 0x0 {
             return Ok(self.device_id);
         }
         Ok(match self.character {
