@@ -18,6 +18,7 @@ use crate::{
         disk::{Disk, DiskRegister},
         ext2::{Directory, Ext2fs, File},
     },
+    trap::take_key,
 };
 
 unsafe extern "C" {
@@ -32,6 +33,7 @@ static ALLOCATOR: LinkedListAllocator = LinkedListAllocator::new_uninit();
 
 const MMIO_CONSOLE: u64 = 0xFFFFFFFFFFFFFF00;
 const MMIO_DISK: u64 = 0xFFFFFFFFFFFFFF10;
+const MMIO_KEYBOARD: u64 = 0xFFFFFFFFFFFFFF30;
 const SECTOR_SIZE: u32 = 512;
 
 #[unsafe(link_section = ".text.start")]
@@ -59,9 +61,18 @@ pub extern "C" fn main() -> ! {
     }
 
     let mut console = ConsoleWriter::new(MMIO_CONSOLE).unwrap();
-    let disk = Disk::new(MMIO_DISK, SECTOR_SIZE).unwrap();
+    // let disk = Disk::new(MMIO_DISK, SECTOR_SIZE).unwrap();
+    //
+    // let ext2fs = Ext2fs::new(disk).unwrap();
 
-    let ext2fs = Ext2fs::new(disk).unwrap();
+    loop {
+        match take_key() {
+            Some(v) => unsafe {
+                console.print_char(v);
+            },
+            None => {}
+        }
+    }
 
     // let superblock = Superblock::from_block(ext2fs.get_blocks(1, 1));
     // let root_inode = ext2fs.get_inode(2);
@@ -84,27 +95,27 @@ pub extern "C" fn main() -> ! {
     // }
 
     // let mut file = File::from_directory(test_dir.unwrap(), ext2fs).unwrap();
-    let mut file = File::from_path("1m.txt", ext2fs).unwrap();
-    file.seek(20);
-    let data = file.read_delim('\n' as u8).unwrap();
+    // let mut file = File::from_path("1m.txt", ext2fs).unwrap();
+    // file.seek(20);
+    // let data = file.read_delim('\n' as u8).unwrap();
     // let data = file.read_all().unwrap();
     // let data = file.read_bytes(6000).unwrap();
     // let data2 = file.read_all().unwrap();
     // let data2 = file.read_bytes(43).unwrap();
 
-    for i in 0..data.len() {
-        unsafe {
-            console.print_char(data[i as usize]);
-        }
-    }
+    // for i in 0..data.len() {
+    //     unsafe {
+    //         console.print_char(data[i as usize]);
+    //     }
+    // }
     // for i in 0..data2.len() {
     //     unsafe {
     //         console.print_char(data2[i as usize]);
     //     }
     // }
 
-    console.print_str("\nDone!\n");
-    ConsoleWriter::print_fmt(format_args!("Size1: {}, Size2: {}\n\n", data.len(), 0));
+    // console.print_str("\nDone!\n");
+    // ConsoleWriter::print_fmt(format_args!("Size1: {}, Size2: {}\n\n", data.len(), 0));
 
     // let inode = ext2fs.get_inode(inode_number);
     // let block = ext2fs.get_blocks(inode.i_block.direct_pointers[0], 1);
@@ -120,7 +131,7 @@ pub extern "C" fn main() -> ! {
     //     }
     // }
 
-    ConsoleWriter::print_fmt(format_args!("\n"));
+    // ConsoleWriter::print_fmt(format_args!("\n"));
 
     ebreak();
     loop {}

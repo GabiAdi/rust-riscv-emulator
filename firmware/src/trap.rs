@@ -1,13 +1,18 @@
 // trap.rs
 use core::arch::global_asm;
-
-use alloc::collections;
+use core::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 
 use crate::{
     MMIO_CONSOLE,
     drivers::console::{self, ConsoleWriter},
     ebreak,
 };
+
+const KEY_BUF_SIZE: usize = 64;
+static KEY_BUF: [AtomicU8; KEY_BUF_SIZE] = [const { AtomicU8::new(0) }; KEY_BUF_SIZE];
+static HEAD: AtomicUsize = AtomicUsize::new(0);
+static TAIL: AtomicUsize = AtomicUsize::new(0);
+const MMIO_KEYBOARD: *mut u8 = 0xFFFFFFFFFFFFFF30 as *mut u8;
 
 global_asm!(
     r#"
@@ -99,8 +104,9 @@ extern "C" fn rust_trap_dispatch() {
 
         match (is_interrupt, code) {
             // (true, 11) => keyboard_isr(),
-            (true, 11) => timer_external_isr(), // machine external interrupt
-            (true, 7) => timer_isr(),           // machine timer interrupt
+            // (true, 11) => timer_external_isr(), // machine external interrupt
+            (true, 11) => keyboard_isr(), // machine external interrupt
+            (true, 7) => timer_isr(),     // machine timer interrupt
             (false, 3) => ebreak_handler(),
             (false, _) => exception_handler(code),
             _ => {}
@@ -131,13 +137,32 @@ fn timer_external_isr() {
     // - 12 for _start
 }
 
+pub fn take_key() -> Option<u8> {
+    let tail = TAIL.load(Ordering::Relaxed);
+    if tail == HEAD.load(Ordering::Acquire) {
+        return None;
+    }
+    let c = KEY_BUF[tail].load(Ordering::Relaxed);
+    TAIL.store((tail + 1) % KEY_BUF_SIZE, Ordering::Release);
+    Some(c)
+}
+
+fn push_key(c: u8) -> bool {
+    let head = HEAD.load(Ordering::Relaxed);
+    let next = (head + 1) % KEY_BUF_SIZE;
+    if next == TAIL.load(Ordering::Acquire) {
+        return false;
+    }
+    KEY_BUF[head].store(c, Ordering::Relaxed);
+    HEAD.store(next, Ordering::Release);
+    true
+}
+
 fn keyboard_isr() {
-    const MMIO_CONSOLE: *mut u8 = 0xFFFFFFFFFFFFFF00 as *mut u8;
-    const MMIO_KEYBOARD: *mut u8 = 0xFFFFFFFFFFFFFF08 as *mut u8;
     unsafe {
         let c = MMIO_KEYBOARD.read_volatile();
-        MMIO_CONSOLE.write_volatile(c);
         MMIO_KEYBOARD.write_volatile(0);
+        push_key(c);
     }
 }
 

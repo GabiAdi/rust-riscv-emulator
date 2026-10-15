@@ -285,9 +285,9 @@ fn main() {
     // let timer = Rc::new(RefCell::new(Timer::new(0xFFFFFFFFFFFFFF08)));
     // memory_devices.push(RefCell::new(Box::new(timer.clone())));
     // interrupt_devices.push(RefCell::new(Box::new(timer.clone())));
-    // let keyboard_device = Rc::new(RefCell::new(KeyboardDevice::new(0xFFFFFFFFFFFFFF08)));
-    // memory_devices.push(Box::new(keyboard_device.clone()));
-    // interrupt_devices.push(Box::new(keyboard_device.clone()));
+    let keyboard_device = Rc::new(RefCell::new(KeyboardDevice::new(0xFFFFFFFFFFFFFF30)));
+    memory_devices.push(RefCell::new(Box::new(keyboard_device.clone())));
+    interrupt_devices.push(RefCell::new(Box::new(keyboard_device.clone())));
 
     let cpu = Rc::new(RefCell::new(Cpu::new()));
 
@@ -332,6 +332,7 @@ fn main() {
     // }
 
     cpu.borrow_mut().run_until_halt();
+    // terminal::disable_raw_mode().unwrap();
     return;
 
     loop {
@@ -399,8 +400,6 @@ fn main() {
             cpu.borrow().debug_read(0x100000 + i * 4, MemoryWidth::Word)
         );
     }
-
-    // terminal::disable_raw_mode().unwrap();
 
     // println!();
 
