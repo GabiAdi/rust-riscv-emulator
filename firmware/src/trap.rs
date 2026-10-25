@@ -163,6 +163,8 @@ fn keyboard_isr() {
         let c = MMIO_KEYBOARD.read_volatile();
         MMIO_KEYBOARD.write_volatile(0);
         push_key(c);
+        // let console = ConsoleWriter::new_unchecked(MMIO_CONSOLE);
+        // console.print_char(c);
     }
 }
 

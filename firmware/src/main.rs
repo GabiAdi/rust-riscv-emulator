@@ -61,53 +61,33 @@ pub extern "C" fn main() -> ! {
     }
 
     let mut console = ConsoleWriter::new(MMIO_CONSOLE).unwrap();
-    // let disk = Disk::new(MMIO_DISK, SECTOR_SIZE).unwrap();
-    //
-    // let ext2fs = Ext2fs::new(disk).unwrap();
+    let disk = Disk::new(MMIO_DISK, SECTOR_SIZE).unwrap();
 
-    loop {
-        match take_key() {
-            Some(v) => unsafe {
-                console.print_char(v);
-            },
-            None => {}
-        }
-    }
+    let ext2fs = Ext2fs::new(disk).unwrap();
 
-    // let superblock = Superblock::from_block(ext2fs.get_blocks(1, 1));
-    // let root_inode = ext2fs.get_inode(2);
-    //
-    // ConsoleWriter::print_fmt(format_args!("Root inode size: {}\n", root_inode.i_size));
-    //
-    // let data = ext2fs.get_blocks(root_inode.i_block.direct_pointers[0], 1);
-    //
-    // let directories: Vec<Directory> = Directory::vec_from_block(&data);
-    //
-    // let mut test_dir: Option<Directory> = None;
-    //
-    // for dir in directories {
-    //     let name = &dir.name.clone();
-    //     if dir.name == "1m.txt" {
-    //         test_dir = Some(dir);
+    // loop {
+    //     match take_key() {
+    //         Some(v) => unsafe {
+    //             console.print_char(v);
+    //         },
+    //         None => {}
     //     }
-    //     console.print_str(name);
-    //     console.print_str("\n");
     // }
 
-    // let mut file = File::from_directory(test_dir.unwrap(), ext2fs).unwrap();
-    // let mut file = File::from_path("1m.txt", ext2fs).unwrap();
+    let mut file = File::from_path("dir_test/top10.txt", ext2fs).unwrap();
+    // let mut file = File::from_path("test.txt", ext2fs).unwrap();
     // file.seek(20);
     // let data = file.read_delim('\n' as u8).unwrap();
-    // let data = file.read_all().unwrap();
+    let data = file.read_all().unwrap();
     // let data = file.read_bytes(6000).unwrap();
     // let data2 = file.read_all().unwrap();
     // let data2 = file.read_bytes(43).unwrap();
 
-    // for i in 0..data.len() {
-    //     unsafe {
-    //         console.print_char(data[i as usize]);
-    //     }
-    // }
+    for i in 0..data.len() {
+        unsafe {
+            console.print_char(data[i as usize]);
+        }
+    }
     // for i in 0..data2.len() {
     //     unsafe {
     //         console.print_char(data2[i as usize]);

@@ -280,20 +280,27 @@ impl File {
     }
 
     pub fn from_path(filename: &str, ext2fs: Ext2fs) -> Option<File> {
-        let root_inode = ext2fs.get_inode(2);
-        let data = ext2fs.get_blocks(root_inode.i_block.direct_pointers[0], 1);
+        let mut path: Vec<&str> = filename.split('/').collect();
 
-        let directories: Vec<Directory> = Directory::vec_from_block(&data);
+        let mut inode = ext2fs.get_inode(2);
 
-        let mut file_dir: Option<Directory> = None;
+        let mut final_directory: Option<Directory> = None;
+        'outer: for path_part in path {
+            let data = ext2fs.get_blocks(inode.i_block.direct_pointers[0], 1);
 
-        for dir in directories {
-            if dir.name == filename {
-                file_dir = Some(dir);
+            let directories: Vec<Directory> = Directory::vec_from_block(&data);
+
+            for dir in directories {
+                if dir.name == path_part {
+                    inode = ext2fs.get_inode(dir.inode);
+                    final_directory = Some(dir);
+                    continue 'outer;
+                }
             }
+            return None;
         }
 
-        Self::from_directory(file_dir?, ext2fs)
+        Self::from_directory(final_directory?, ext2fs)
     }
 
     pub fn seek(&mut self, bytes: u32) {
