@@ -5,10 +5,13 @@ OC		= $(ARCH)-objcopy
 NM		=	$(ARCH)-nm
 FLAGS	=	-march=rv64imacfdzicsr -g
 FLAGSC =	-march=rv64imacfdzicsr -g
+RUSTFLAGS_PIC = -C relocation-model=pic -C code-model=medium \
+                -C link-arg=-pie -C link-arg=--no-dynamic-linker \
+                -C link-arg=-zrelro
 
-.PHONY: all clean test firmware firmware.bin
+.PHONY: all clean test firmware firmware.bin kernel kernel.bin
 
-all: test.bin testc.bin firmware.bin
+all: test.bin testc.bin firmware.bin kernel.bin
 
 testc.o: assembly/test.s
 	$(AS) $(FLAGSC) -o assembly/testc.o assembly/testc.s
@@ -35,8 +38,25 @@ firmware:
 firmware.bin: firmware
 	$(OC) -O binary assembly/firmware.elf assembly/firmware.bin
 
+kernel:
+	RUSTFLAGS="$(RUSTFLAGS_PIC)" cargo +nightly build -p kernel \
+		--target kernel/riscv64gc.json -Zjson-target-spec \
+		-Zbuild-std=core,compiler_builtins,alloc \
+		-Zbuild-std-features=compiler-builtins-mem
+	cp target/riscv64gc/debug/kernel assembly/kernel.elf
+
+kernel.bin: kernel
+	$(OC) -O binary assembly/kernel.elf assembly/kernel.bin
+	./mount.sh
+	rm /mnt/emulator_disk/kernel
+	cp assembly/kernel.bin /mnt/emulator_disk/kernel
+	./unmount.sh
+
 test:
 	cargo test --bin emulator
+
+run: firmware.bin kernel.bin
+	cargo run --release
 
 clean:
 	rm -f assembly/test.o assembly/test.elf assembly/test.bin

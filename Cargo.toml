@@ -3,6 +3,7 @@ resolver = "3"
 members = [
     "emulator",
     "firmware",
+	"kernel",
 ]
 
 [profile.release]

@@ -5,11 +5,15 @@ mod allocator;
 mod drivers;
 mod trap;
 
+#[macro_use]
 extern crate alloc;
 
 use core::{panic::PanicInfo, u64};
 
-use alloc::{string::String, vec::Vec};
+use alloc::{
+    string::String,
+    vec::{self, Vec},
+};
 
 use crate::{
     allocator::LinkedListAllocator,
@@ -74,7 +78,7 @@ pub extern "C" fn main() -> ! {
     //     }
     // }
 
-    let mut file = File::from_path("dir_test/top10.txt", ext2fs).unwrap();
+    let mut file = File::from_path("kernel", ext2fs).unwrap();
     // let mut file = File::from_path("test.txt", ext2fs).unwrap();
     // file.seek(20);
     // let data = file.read_delim('\n' as u8).unwrap();
@@ -83,11 +87,11 @@ pub extern "C" fn main() -> ! {
     // let data2 = file.read_all().unwrap();
     // let data2 = file.read_bytes(43).unwrap();
 
-    for i in 0..data.len() {
-        unsafe {
-            console.print_char(data[i as usize]);
-        }
-    }
+    // for i in 0..data.len() {
+    //     unsafe {
+    //         console.print_char(data[i as usize]);
+    //     }
+    // }
     // for i in 0..data2.len() {
     //     unsafe {
     //         console.print_char(data2[i as usize]);
@@ -95,7 +99,18 @@ pub extern "C" fn main() -> ! {
     // }
 
     // console.print_str("\nDone!\n");
-    // ConsoleWriter::print_fmt(format_args!("Size1: {}, Size2: {}\n\n", data.len(), 0));
+
+    const KERNEL_EXTRA: usize = 1 << 20;
+    let raw = vec![0u8; data.len() + KERNEL_EXTRA + 4096];
+    let base = (raw.as_ptr() as usize + 4095) & !4095;
+    unsafe { core::ptr::copy_nonoverlapping(data.as_ptr(), base as *mut u8, data.len()) };
+
+    ConsoleWriter::print_fmt(format_args!(
+        "Size: {}, Pointer addr: {}\n\n",
+        data.len(),
+        data.as_ptr() as usize
+    ));
+    unsafe { jump_to(base, 0, 0) };
 
     // let inode = ext2fs.get_inode(inode_number);
     // let block = ext2fs.get_blocks(inode.i_block.direct_pointers[0], 1);
@@ -115,6 +130,12 @@ pub extern "C" fn main() -> ! {
 
     ebreak();
     loop {}
+}
+
+unsafe fn jump_to(addr: usize, a0: usize, a1: usize) -> ! {
+    unsafe {
+        core::arch::asm!("fence.i", "jr {0}", in(reg) addr, in("a0") a0, in("a1") a1, options(noreturn))
+    };
 }
 
 fn test_vector(mut console: ConsoleWriter) {

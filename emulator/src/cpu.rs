@@ -1470,6 +1470,7 @@ impl Cpu {
             }
             InstructionResult::Ebreak => {
                 self.halted = self.halt_on_ebreak;
+                // println!("EBREAK! @ {:#018x}", self.pc);
                 // return Ok(Some(Trap {
                 //     cause: Exception::Breakpoint as u64,
                 //     is_interrupt: false,

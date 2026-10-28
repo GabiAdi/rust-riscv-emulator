@@ -338,6 +338,7 @@ impl File {
             };
 
             let block_number = self.next_block_number()?;
+            self.current_block += 1;
             let offset = (self.inode.i_size - self.remaining_bytes) % 1024;
 
             if let Some(last_range) = block_ranges.last_mut()
@@ -362,17 +363,17 @@ impl File {
             to_read -= to_copy;
         }
 
-        let offset: usize = 0;
+        let mut offset: usize = 0;
 
         for block_range in block_ranges {
-            let block_number = block_range.start_block;
             let block_count = block_range.end_block - block_range.start_block;
-            let data_block = self.ext2fs.get_blocks(block_number, block_count);
+            let data_block = self.ext2fs.get_blocks(block_range.start_block, block_count);
+            let n = block_range.bytes as usize;
+            let o = block_range.offset as usize;
 
-            buffer[offset..(offset + block_range.bytes as usize)].copy_from_slice(
-                &data_block[block_range.offset as usize
-                    ..block_range.bytes as usize + block_range.offset as usize],
-            );
+            buffer[offset..offset + n].copy_from_slice(&data_block[o..o + n]);
+
+            offset += n;
         }
 
         Some(buffer)
@@ -392,6 +393,7 @@ impl File {
             };
 
             let block_number = self.next_block_number()?;
+            self.current_block += 1;
             let offset = (self.inode.i_size - self.remaining_bytes) % 1024;
 
             if let Some(last_range) = block_ranges.last_mut()
@@ -415,17 +417,17 @@ impl File {
             self.remaining_bytes -= to_copy;
         }
 
-        let offset: usize = 0;
+        let mut offset: usize = 0;
 
         for block_range in block_ranges {
-            let block_number = block_range.start_block;
             let block_count = block_range.end_block - block_range.start_block;
-            let data_block = self.ext2fs.get_blocks(block_number, block_count);
+            let data_block = self.ext2fs.get_blocks(block_range.start_block, block_count);
+            let n = block_range.bytes as usize;
+            let o = block_range.offset as usize;
 
-            buffer[offset..(offset + block_range.bytes as usize)].copy_from_slice(
-                &data_block[block_range.offset as usize
-                    ..block_range.bytes as usize + block_range.offset as usize],
-            );
+            buffer[offset..offset + n].copy_from_slice(&data_block[o..o + n]);
+
+            offset += n;
         }
 
         Some(buffer)
@@ -439,6 +441,7 @@ impl File {
 
         while self.remaining_bytes != 0 {
             let block_number = self.next_block_number()?;
+            self.current_block += 1;
             let block = self.ext2fs.get_blocks(block_number, 1);
 
             let mut delim_index: Option<u16> = None;
@@ -489,19 +492,19 @@ impl File {
             }
         }
 
-        let offset: usize = 0;
-
         buffer.resize(buffer_size, 0);
 
-        for block_range in block_ranges {
-            let block_number = block_range.start_block;
-            let block_count = block_range.end_block - block_range.start_block;
-            let data_block = self.ext2fs.get_blocks(block_number, block_count);
+        let mut offset: usize = 0;
 
-            buffer[offset..(offset + block_range.bytes as usize)].copy_from_slice(
-                &data_block[block_range.offset as usize
-                    ..block_range.bytes as usize + block_range.offset as usize],
-            );
+        for block_range in block_ranges {
+            let block_count = block_range.end_block - block_range.start_block;
+            let data_block = self.ext2fs.get_blocks(block_range.start_block, block_count);
+            let n = block_range.bytes as usize;
+            let o = block_range.offset as usize;
+
+            buffer[offset..offset + n].copy_from_slice(&data_block[o..o + n]);
+
+            offset += n;
         }
 
         Some(buffer)
