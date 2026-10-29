@@ -245,7 +245,7 @@ fn spawn_std_reader() -> Receiver<u8> {
 }
 
 fn main() {
-    // terminal::enable_raw_mode().unwrap();
+    terminal::enable_raw_mode().unwrap();
     // test_cpu("rv64ui-p-ma_data");
 
     // let mut cpu = Cpu::new();
@@ -285,9 +285,9 @@ fn main() {
     // let timer = Rc::new(RefCell::new(Timer::new(0xFFFFFFFFFFFFFF08)));
     // memory_devices.push(RefCell::new(Box::new(timer.clone())));
     // interrupt_devices.push(RefCell::new(Box::new(timer.clone())));
-    // let keyboard_device = Rc::new(RefCell::new(KeyboardDevice::new(0xFFFFFFFFFFFFFF30)));
-    // memory_devices.push(RefCell::new(Box::new(keyboard_device.clone())));
-    // interrupt_devices.push(RefCell::new(Box::new(keyboard_device.clone())));
+    let keyboard_device = Rc::new(RefCell::new(KeyboardDevice::new(0xFFFFFFFFFFFFFF30)));
+    memory_devices.push(RefCell::new(Box::new(keyboard_device.clone())));
+    interrupt_devices.push(RefCell::new(Box::new(keyboard_device.clone())));
 
     let cpu = Rc::new(RefCell::new(Cpu::new()));
 
@@ -306,35 +306,35 @@ fn main() {
 
     // cpu.borrow_mut().run_until_halt();
 
-    // let stdin_rx = spawn_std_reader();
-    // let mut running = true;
-    //
-    // while running {
-    //     while let Ok(byte) = stdin_rx.try_recv() {
-    //         if byte == 0x3 {
-    //             running = false;
-    //             break;
-    //         }
-    //         keyboard_device.borrow_mut().push_key(byte);
-    //     }
-    //
-    //     match cpu.borrow_mut().step() {
-    //         Ok(()) => {}
-    //         Err(error) => {
-    //             terminal::disable_raw_mode().unwrap();
-    //             handle_error(error);
-    //             break;
-    //         }
-    //     };
-    //
-    //     if cpu.borrow().halted {
-    //         break;
-    //     }
-    // }
+    let stdin_rx = spawn_std_reader();
+    let mut running = true;
+
+    while running {
+        while let Ok(byte) = stdin_rx.try_recv() {
+            // if byte == 0x3 {
+            //     running = false;
+            //     break;
+            // }
+            keyboard_device.borrow_mut().push_key(byte);
+        }
+
+        match cpu.borrow_mut().step() {
+            Ok(()) => {}
+            Err(error) => {
+                terminal::disable_raw_mode().unwrap();
+                handle_error(error);
+                break;
+            }
+        };
+
+        if cpu.borrow().halted {
+            break;
+        }
+    }
 
     // cpu.borrow_mut().run_until_halt();
-    // terminal::disable_raw_mode().unwrap();
-    // return;
+    terminal::disable_raw_mode().unwrap();
+    return;
 
     loop {
         print!(">> ");

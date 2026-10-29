@@ -74,7 +74,11 @@ impl ConsoleWriter {
         }
     }
 
-    pub fn print_fmt(fmt: core::fmt::Arguments) -> Result<(), fmt::Error> {
+    pub fn print_fmt(&mut self, fmt: core::fmt::Arguments) -> Result<(), fmt::Error> {
+        core::fmt::write(self, fmt)
+    }
+
+    pub fn print_fmt_uninit(fmt: core::fmt::Arguments) -> Result<(), fmt::Error> {
         let mut console = unsafe { Self::new_unchecked(MMIO_CONSOLE) };
         core::fmt::write(&mut console, fmt)
     }

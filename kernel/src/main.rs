@@ -5,15 +5,23 @@ mod allocator;
 mod drivers;
 mod trap;
 
+#[macro_use]
 extern crate alloc;
 
+use alloc::{
+    string::String,
+    vec::{self, Vec},
+};
 use allocator::LinkedListAllocator;
 use core::{panic::PanicInfo, u64};
 use drivers::console::ConsoleWriter;
 
-use crate::drivers::{
-    disk::Disk,
-    ext2::{Ext2fs, File},
+use crate::{
+    drivers::{
+        disk::Disk,
+        ext2::{Ext2fs, File},
+    },
+    trap::take_key,
 };
 
 const MMIO_CONSOLE: u64 = 0xFFFFFFFFFFFFFF00;
@@ -28,11 +36,16 @@ const HEAP_END: usize = RAM_END - STACK_SIZE;
 #[global_allocator]
 static ALLOCATOR: LinkedListAllocator = LinkedListAllocator::new_uninit();
 
+unsafe extern "C" {
+    fn _trap_entry();
+}
+
 #[unsafe(link_section = ".text.start")]
 #[unsafe(no_mangle)]
 #[unsafe(naked)]
 pub extern "C" fn _start() -> ! {
     core::arch::naked_asm!(
+        "csrrci x0, mstatus, 0x8",
         "mv   s0, a0",
         "mv   s1, a1",
         "lla  s2, _start",          // runtime base (link addr is 0)
@@ -69,8 +82,15 @@ pub extern "C" fn _start() -> ! {
         "mv   a1, s1",              // dtb
         "mv   a2, s2",              // base
         "lla  a3, _heap_start",     // runtime heap start
+
+        "la t0, {trap}",
+        "csrw mtvec, t0",
+        "li t0, (1 << 11)",
+        "csrw mie, t0",
+        "csrsi mstatus, 0x8",
         "tail main",
         ram_end = const RAM_END,
+        trap = sym _trap_entry,
     );
 }
 
@@ -82,20 +102,75 @@ pub extern "C" fn main(_hartid: usize, _dtb: usize, _base: usize, heap_start: us
     }
     let _ = heap_start;
 
-    let console = ConsoleWriter::new(MMIO_CONSOLE).unwrap();
+    let mut console = ConsoleWriter::new(MMIO_CONSOLE).unwrap();
 
     console.print_str("Testing...\n");
 
-    let disk = Disk::new(MMIO_DISK, SECTOR_SIZE).unwrap();
-    let ext2fs = Ext2fs::new(disk).unwrap();
-    let mut file = File::from_path("dir_test/top10.txt", ext2fs).unwrap();
-    let data = file.read_all().unwrap();
+    const COMMAND_VEC_MAX_LEN: usize = 1024;
+    let mut command_vec: Vec<u8> = vec![0u8; COMMAND_VEC_MAX_LEN];
+    let mut current_len: usize = 0;
 
-    for c in data {
-        unsafe {
-            console.print_char(c);
+    loop {
+        match take_key() {
+            Some(v) => unsafe {
+                match v {
+                    0x03 => {
+                        console.print_str("Kernel: <ctrl+c>, quitting...\n");
+                        break;
+                    }
+                    0x7f => {
+                        // Backspace
+                        if current_len > 0 {
+                            current_len -= 1;
+                        }
+                        console.print_str("\x08 \x08");
+                    }
+                    0x0d => {
+                        // Enter
+                        console.print_str("\n");
+                        if current_len > 0 {
+                            let command_string =
+                                String::from_utf8_lossy(&command_vec[0..current_len]).into_owned();
+
+                            if command_string == "quit" {
+                                console.print_str("quitting...\n");
+                                break;
+                            } else if &command_string[0..4] == "read" {
+                                console.print_str("Reading");
+                            } else {
+                                console
+                                    .print_fmt(format_args!("Unkown command: {}", command_string));
+                            }
+
+                            current_len = 0;
+                            console.print_str("\n");
+                        }
+                    }
+                    _ => {
+                        if current_len + 1 > COMMAND_VEC_MAX_LEN {
+                            continue;
+                        }
+                        console.print_char(v);
+                        command_vec[current_len] = v;
+                        current_len += 1;
+                        // console.print_fmt(format_args!("Char value: {:#04x}", v));
+                    }
+                }
+            },
+            None => {}
         }
     }
+
+    // let disk = Disk::new(MMIO_DISK, SECTOR_SIZE).unwrap();
+    // let ext2fs = Ext2fs::new(disk).unwrap();
+    // let mut file = File::from_path("dir_test/top10.txt", ext2fs).unwrap();
+    // let data = file.read_all().unwrap();
+    //
+    // for c in data {
+    //     unsafe {
+    //         console.print_char(c);
+    //     }
+    // }
 
     ebreak();
     loop {}
