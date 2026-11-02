@@ -13,6 +13,8 @@ static KEY_BUF: [AtomicU8; KEY_BUF_SIZE] = [const { AtomicU8::new(0) }; KEY_BUF_
 static HEAD: AtomicUsize = AtomicUsize::new(0);
 static TAIL: AtomicUsize = AtomicUsize::new(0);
 const MMIO_KEYBOARD: *mut u8 = 0xFFFFFFFFFFFFFF30 as *mut u8;
+const MMIO_IC_DEVICE_ID: *mut u64 = 0x20000000 as *mut u64;
+const MMIO_IC_START_ID: *mut u64 = 0x20000008 as *mut u64;
 
 global_asm!(
     r#"
@@ -105,7 +107,7 @@ extern "C" fn rust_trap_dispatch() {
         match (is_interrupt, code) {
             // (true, 11) => keyboard_isr(),
             // (true, 11) => timer_external_isr(), // machine external interrupt
-            (true, 11) => keyboard_isr(), // machine external interrupt
+            (true, 11) => external_isr(), // machine external interrupt
             (true, 7) => timer_isr(),     // machine timer interrupt
             (false, 3) => ebreak_handler(),
             (false, _) => exception_handler(code),
@@ -158,10 +160,11 @@ fn push_key(c: u8) -> bool {
     true
 }
 
-fn keyboard_isr() {
+fn external_isr() {
     unsafe {
         let c = MMIO_KEYBOARD.read_volatile();
-        MMIO_KEYBOARD.write_volatile(0);
+        MMIO_KEYBOARD.write_volatile(0); // CLEAR KEYBOARD INTERRUPT FIRST THEN IC
+        MMIO_IC_DEVICE_ID.write_volatile(0);
         push_key(c);
         // let console = ConsoleWriter::new_unchecked(MMIO_CONSOLE);
         // console.print_char(c);

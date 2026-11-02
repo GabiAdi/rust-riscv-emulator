@@ -46,13 +46,13 @@ const SECTOR_SIZE: u32 = 512;
 pub extern "C" fn _start() -> ! {
     core::arch::naked_asm!(
         "la sp, _stack_top",
-        "la t0, {trap}",
-        "csrw mtvec, t0",
-        "li t0, (1 << 11)",
-        "csrw mie, t0",
-        "csrsi mstatus, 0x8",
+        // "la t0, {trap}",
+        // "csrw mtvec, t0",
+        // "li t0, (1 << 11)",
+        // "csrw mie, t0",
+        // "csrsi mstatus, 0x8",
         "j main",
-        trap = sym _trap_entry,
+        // trap = sym _trap_entry,
     );
 }
 

@@ -8,7 +8,6 @@ mod keyboard_device;
 mod memory_device;
 mod ram;
 mod rom;
-mod test_device;
 mod timer;
 
 use crossterm::terminal;
@@ -34,7 +33,6 @@ use crate::memory_device::DeviceError;
 use crate::memory_device::MemoryDevice;
 use crate::ram::Ram;
 use crate::rom::Rom;
-use crate::test_device::TestDevice;
 use crate::timer::Timer;
 use bus::Bus;
 use cpu::{Cpu, Csr};
@@ -167,6 +165,7 @@ fn test_cpu(prefix: &str) -> Result<bool, CpuError> {
             interrupt_devices,
             dma_devices,
             cpu.borrow().get_shared_mip(),
+            0x20000000,
         ));
 
         cpu.borrow_mut().attach_bus(bus);
@@ -296,6 +295,7 @@ fn main() {
         interrupt_devices,
         dma_devices,
         cpu.borrow().get_shared_mip(),
+        0x20000000,
     ));
 
     bus.attach_dma_devices(&bus);

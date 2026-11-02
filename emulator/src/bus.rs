@@ -4,7 +4,7 @@ use std::rc::{Rc, Weak};
 
 use crate::cpu::{Cpu, MemoryWidth};
 use crate::dma_device::{self, DmaDevice};
-use crate::interrupt_device::InterruptDevice;
+use crate::interrupt_device::{DeviceInterrupt, InterruptDevice};
 use crate::memory_device::{DeviceError, DeviceType, MemoryDevice};
 
 pub struct Bus {
@@ -13,6 +13,9 @@ pub struct Bus {
     dma_devices: Vec<Box<RefCell<dyn DmaDevice>>>,
     max_addr: u64,
     mip_shared: Rc<Cell<u64>>,
+
+    interrupts: RefCell<Vec<DeviceInterrupt>>,
+    interrupt_controller_base: u64,
 
     pub halt_cpu: bool,
 }
@@ -23,6 +26,7 @@ impl Bus {
         interrupt_devices: Vec<RefCell<Box<dyn InterruptDevice>>>,
         dma_devices: Vec<Box<RefCell<dyn DmaDevice>>>,
         mip_shared: Rc<Cell<u64>>,
+        ic_base: u64,
     ) -> Bus {
         let mut max_addr: u64 = 0;
 
@@ -38,6 +42,10 @@ impl Bus {
             dma_devices,
             max_addr,
             mip_shared,
+
+            interrupts: RefCell::new(Vec::new()),
+            interrupt_controller_base: ic_base,
+
             halt_cpu: false,
         };
 
@@ -52,7 +60,24 @@ impl Bus {
 
     pub fn tick_interrupts(&self) {
         for device in &self.interrupt_devices {
-            device.borrow_mut().trigger_interrupt(&self.mip_shared);
+            if let Some(int) = device.borrow_mut().trigger_interrupt()
+                && !self.interrupts.borrow().contains(&int)
+            {
+                self.interrupts.borrow_mut().push(int);
+            }
+        }
+
+        for int in self.interrupts.borrow().iter() {
+            let mut mip = self.mip_shared.get();
+            mip |= int.bit as u64;
+            self.mip_shared.set(mip);
+        }
+
+        if self.interrupts.borrow().len() == 0 {
+            let mut mip = self.mip_shared.get();
+            mip &= !(1 << 11);
+            mip &= !(1 << 7);
+            self.mip_shared.set(mip);
         }
     }
 
@@ -77,6 +102,15 @@ impl Bus {
     }
 
     pub fn read(&self, addr: u64, width: MemoryWidth) -> Result<u64, DeviceError> {
+        if (addr == self.interrupt_controller_base || addr == self.interrupt_controller_base + 8)
+            && let Some(int) = self.interrupts.borrow().first()
+        {
+            return Ok(if addr == self.interrupt_controller_base {
+                int.device_id
+            } else {
+                int.start_addr
+            });
+        }
         let device = self.get_device(addr)?;
         let start_addr = device.borrow().get_start_addr();
         match width {
@@ -88,6 +122,12 @@ impl Bus {
     }
 
     pub fn write(&self, addr: u64, value: u64, width: MemoryWidth) -> Result<(), DeviceError> {
+        if addr == self.interrupt_controller_base || addr == self.interrupt_controller_base + 8 {
+            if self.interrupts.borrow().len() > 0 {
+                self.interrupts.borrow_mut().remove(0);
+            }
+            return Ok(());
+        }
         let device = self.get_device(addr)?;
         let start_addr = device.borrow().get_start_addr();
         match width {

@@ -1,4 +1,4 @@
-use crate::interrupt_device::InterruptDevice;
+use crate::interrupt_device::{DeviceInterrupt, InterruptDevice};
 use crate::memory_device::{DeviceError, DeviceType, MemoryDevice};
 use std::cell::Cell;
 use std::rc::Rc;
@@ -94,14 +94,16 @@ impl InterruptDevice for KeyboardDevice {
         11
     }
 
-    fn trigger_interrupt(&mut self, mip_shared: &Rc<Cell<u64>>) {
-        let bit = 1 << self.interrupt_bit();
-        let mut mip = mip_shared.get();
-        if self.pending {
-            mip |= bit;
-        } else {
-            mip &= !bit;
+    fn trigger_interrupt(&mut self) -> Option<DeviceInterrupt> {
+        if !self.pending {
+            return None;
         }
-        mip_shared.set(mip);
+        let bit = 1 << self.interrupt_bit();
+
+        Some(DeviceInterrupt {
+            bit: bit,
+            device_id: self.device_id,
+            start_addr: self.start_addr,
+        })
     }
 }
